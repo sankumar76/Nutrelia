@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <form method="post" class="card narrow">
-  <h1>Edit food</h1>
+  <h1>{% if editable %}Edit food{% else %}Food details{% endif %}</h1>
+  {% if not editable %}<p class="muted">Foods are shared by everyone. Only the person who added this food, or the admin, can change it.</p>{% endif %}
+  <fieldset class="plain" {% if not editable %}disabled{% endif %}>
   <label>Name <input name="name" value="{{ food.name }}" required></label>
   <label>Nutrition below is for <small>e.g. 100 g, 1 cup, 2 slice</small>
     <input name="serving" value="{{ serving }}" required></label>
@@ -11,7 +13,9 @@
       <input type="number" step="any" min="0" name="{{ n }}" value="{{ food[n]|amount if food[n] is not none else '' }}" {% if n == 'calories' %}required{% endif %} inputmode="decimal"></label>
   {% endfor %}
   </div>
-  <p class="muted">Logged {{ food.times_logged }}×{% if food.last_logged %}, last on {{ food.last_logged }}{% endif %}. Changes also update the totals of days where you logged it.</p>
+  </fieldset>
+  <p class="muted">Logged {{ food.times_logged }}×{% if food.last_logged %}, last on {{ food.last_logged }}{% endif %}. Changes also update the totals of days where it was logged.</p>
+  {% if editable %}
   <div class="row">
     <button>Save</button>
     <a href="{{ url_for('foods') }}">Cancel</a>
@@ -19,5 +23,6 @@
       <button name="delete" value="1" class="danger" formnovalidate data-msg="Delete {{ food.name }}?" onclick="return confirm(this.dataset.msg)">Delete</button>
     {% endif %}
   </div>
+  {% else %}<a href="{{ url_for('foods') }}">Back to foods</a>{% endif %}
 </form>
 {% endblock %}

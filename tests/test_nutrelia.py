@@ -122,10 +122,14 @@ def test_split_lines():
 
 def test_app_flow(tmp_path, monkeypatch):
     monkeypatch.setenv("NUTRELIA_DB", str(tmp_path / "app.db"))
+    monkeypatch.setenv("NUTRELIA_PASSWORD", "pw1234")
     import importlib
     import app as app_module
     importlib.reload(app_module)
     c = app_module.app.test_client()
+    assert c.get("/day/2026-01-05").status_code == 302  # must sign in
+    c.post("/login", data={"username": "santhosh", "password": "pw1234"})
+    assert b"Sambar" in c.get("/day/2025-10-01").data  # admin owns the imported history
     r = c.post("/day/2026-01-05/match", data={"meal": "Dinner", "foods": "sambar"})
     assert r.status_code == 200 and b"pick one" in r.data
     import re
@@ -141,9 +145,44 @@ def test_split_lines_keeps_serving_with_name():
 
 
 def test_targets_roundtrip(conn):
-    assert db.get_targets(conn) == {"calories": None, "carbs": None, "fat": None, "protein": None, "fiber": None}
-    db.set_targets(conn, {"calories": 1800, "protein": 90})
-    assert db.get_targets(conn)["calories"] == 1800 and db.get_targets(conn)["fat"] is None
+    uid = db.create_user(conn, "a", "A", "secret1")
+    assert db.get_targets(conn, uid) == {"calories": None, "carbs": None, "fat": None, "protein": None, "fiber": None}
+    db.set_targets(conn, uid, {"calories": 1800, "protein": 90})
+    assert db.get_targets(conn, uid)["calories"] == 1800 and db.get_targets(conn, uid)["fat"] is None
+
+
+def test_first_admin_adopts_existing_log_and_targets(conn):
+    conn.execute("INSERT INTO settings (key, value) VALUES ('target_calories', '1600')")
+    admin = db.create_user(conn, "santhosh", "Santhosh", "secret1", is_admin=True)
+    other = db.create_user(conn, "priya", "Priya", "secret2")
+    assert conn.execute("SELECT COUNT(*) FROM log_entries WHERE user_id IS NOT ?", (admin,)).fetchone()[0] == 0
+    assert db.get_targets(conn, admin)["calories"] == 1600
+    assert db.get_targets(conn, other)["calories"] is None
+    assert db.day_entries(conn, other, "2025-10-01") == []
+    assert len(db.day_entries(conn, admin, "2025-10-01")) == 5
+    assert db.check_login(conn, "Priya", "secret2")["id"] == other
+    assert db.check_login(conn, "priya", "wrong") is None
+
+
+def test_old_database_is_migrated(tmp_path):
+    import sqlite3
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)
+    old.executescript("""
+        CREATE TABLE foods (id INTEGER PRIMARY KEY, name TEXT NOT NULL, base_amount REAL NOT NULL DEFAULT 1,
+            unit TEXT NOT NULL DEFAULT 'serving', calories REAL, carbs REAL, fat REAL, protein REAL, cholesterol REAL,
+            sodium REAL, sugar REAL, fiber REAL, times_logged INTEGER NOT NULL DEFAULT 0, last_logged TEXT,
+            source TEXT NOT NULL DEFAULT 'mfp');
+        CREATE TABLE log_entries (id INTEGER PRIMARY KEY, day TEXT NOT NULL, meal TEXT NOT NULL,
+            food_id INTEGER NOT NULL REFERENCES foods(id), amount REAL NOT NULL, position INTEGER NOT NULL DEFAULT 0);
+        INSERT INTO foods (name, calories) VALUES ('Egg', 72);
+        INSERT INTO log_entries (day, meal, food_id, amount) VALUES ('2026-10-16', 'Breakfast', 1, 2);
+    """)
+    old.commit()
+    old.close()
+    c = db.connect(str(path))
+    uid = db.create_user(c, "santhosh", "Santhosh", "secret1", is_admin=True)
+    assert [r["amount"] for r in db.day_entries(c, uid, "2026-10-16")] == [2]
 
 
 def test_edit_and_delete_food(conn):
@@ -176,3 +215,22 @@ def test_pypdf_style_continuation_lines():
     assert [(r.name, r.serving) for r in rows] == [
         ("Hemp Hearts - Hemp Hearts, Raw Shelled Hemp Seeds", "1 tbsp"), ("Peanuts", "50 gram(s)")]
     assert rows[1].fat == 25
+
+
+def test_people_have_separate_logs(tmp_path, monkeypatch):
+    monkeypatch.setenv("NUTRELIA_DB", str(tmp_path / "app.db"))
+    monkeypatch.setenv("NUTRELIA_PASSWORD", "pw1234")
+    import importlib
+    import app as app_module
+    importlib.reload(app_module)
+    admin = app_module.app.test_client()
+    admin.post("/login", data={"username": "santhosh", "password": "pw1234"})
+    admin.post("/people", data={"action": "add", "name": "Priya", "username": "priya", "password": "pw5678"})
+    admin.post("/targets", data={"calories": "1800"})
+    priya = app_module.app.test_client()
+    priya.post("/login", data={"username": "priya", "password": "pw5678"})
+    page = priya.get("/day/2025-10-01").data
+    assert b"Sambar" not in page and b"Set targets" in page
+    assert priya.get("/people").status_code == 403
+    entry = app_module.db.connect().execute("SELECT id FROM log_entries LIMIT 1").fetchone()[0]
+    assert priya.post(f"/entry/{entry}/update", data={"delete": "1"}).status_code == 404

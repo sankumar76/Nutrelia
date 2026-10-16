@@ -1,7 +1,6 @@
 """Nutrelia web app: build a day's food log by listing what you ate."""
 from __future__ import annotations
 
-import hmac
 import os
 import sys
 import tempfile
@@ -22,7 +21,10 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("NUTRELIA_SECRET_KEY", "dev-only-change-me")
 app.config.update(MAX_CONTENT_LENGTH=40 * 1024 * 1024, SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   PERMANENT_SESSION_LIFETIME=timedelta(days=60))
-PASSWORD = os.environ.get("NUTRELIA_PASSWORD", "")
+# The first account (the admin) is created from these on first start; more people are added in the app.
+ADMIN_USER = os.environ.get("NUTRELIA_ADMIN_USER", "santhosh")
+ADMIN_NAME = os.environ.get("NUTRELIA_ADMIN_NAME", "Santhosh")
+PASSWORD = os.environ.get("NUTRELIA_PASSWORD", "") or "nutrelia"
 UNITS = {"calories": "", "carbs": "g", "fat": "g", "protein": "g", "cholesterol": "mg", "sodium": "mg", "sugar": "g", "fiber": "g"}
 
 
@@ -40,7 +42,7 @@ def close_db(_exc):
 
 
 def seed_if_empty():
-    """A fresh deployment starts from the MFP history committed in data/diary_history.csv."""
+    """A fresh deployment starts from the MFP history in data/diary_history.csv and one admin account."""
     conn = db.connect()
     try:
         if conn.execute("SELECT COUNT(*) FROM foods").fetchone()[0] == 0:
@@ -48,6 +50,9 @@ def seed_if_empty():
             entries = load_history()
             if entries:
                 db.import_entries(conn, entries)
+        if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
+            # takes over the existing log and targets
+            db.create_user(conn, ADMIN_USER, ADMIN_NAME, PASSWORD, is_admin=True)
     finally:
         conn.close()
 
@@ -55,10 +60,28 @@ def seed_if_empty():
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if PASSWORD and not session.get("ok"):
+        uid = session.get("user_id")
+        user = get_db().execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone() if uid else None
+        if not user:
+            session.clear()
             return redirect(url_for("login", next=request.path))
+        g.user = user
         return view(*args, **kwargs)
     return wrapped
+
+
+def admin_required(view):
+    @wraps(view)
+    @login_required
+    def wrapped(*args, **kwargs):
+        if not g.user["is_admin"]:
+            abort(403)
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def can_edit_food(food) -> bool:
+    return bool(g.user["is_admin"]) or (food["created_by"] is not None and food["created_by"] == g.user["id"])
 
 
 def parse_day(value: str) -> str:
@@ -102,18 +125,20 @@ def qty(value):
 
 @app.context_processor
 def inject():
-    return {"NUTRIENTS": NUTRIENTS, "UNITS": UNITS, "MEALS": db.MEAL_ORDER, "auth_enabled": bool(PASSWORD)}
+    return {"NUTRIENTS": NUTRIENTS, "UNITS": UNITS, "MEALS": db.MEAL_ORDER, "user": g.get("user")}
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        if PASSWORD and hmac.compare_digest(request.form.get("password", ""), PASSWORD):
+        user = db.check_login(get_db(), request.form.get("username", ""), request.form.get("password", ""))
+        if user:
+            session.clear()
             session.permanent = True
-            session["ok"] = True
+            session["user_id"] = user["id"]
             nxt = request.args.get("next", "")
             return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("index"))
-        flash("Wrong password.")
+        flash("Wrong username or password.")
     return render_template("login.html")
 
 
@@ -134,13 +159,13 @@ def index():
 @login_required
 def day_view(day):
     day = parse_day(day)
-    rows = [dict(r) for r in db.day_entries(get_db(), day)]
+    rows = [dict(r) for r in db.day_entries(get_db(), g.user["id"], day)]
     for r in rows:
         r["scaled"] = db.scale(r, r["amount"])
     by_meal = {m: [r for r in rows if r["meal"] == m] for m in db.MEAL_ORDER}
     d = date.fromisoformat(day)
     return render_template(
-        "day.html", day=day, d=d, by_meal=by_meal, day_totals=totals(rows), targets=db.get_targets(get_db()),
+        "day.html", day=day, d=d, by_meal=by_meal, day_totals=totals(rows), targets=db.get_targets(get_db(), g.user["id"]),
         meal_totals={m: totals(v) for m, v in by_meal.items()},
         prev_day=(d - timedelta(days=1)).isoformat(), next_day=(d + timedelta(days=1)).isoformat(),
         default_meal=request.args.get("meal", ""),
@@ -174,7 +199,7 @@ def add(day):
         food = conn.execute("SELECT * FROM foods WHERE id = ?", (int(choice),)).fetchone()
         if not food:
             continue
-        db.add_entry(conn, day, meal, food["id"], form_amount(f"amount_{i}_{choice}", food["base_amount"]))
+        db.add_entry(conn, g.user["id"], day, meal, food["id"], form_amount(f"amount_{i}_{choice}", food["base_amount"]))
         added += 1
     flash(f"Added {added} food{'s' if added != 1 else ''} to {meal}.")
     return redirect(url_for("day_view", day=day))
@@ -186,9 +211,9 @@ def copy_day(day):
     day = parse_day(day)
     src = parse_day(request.form.get("from", ""))
     conn = get_db()
-    rows = db.day_entries(conn, src)
+    rows = db.day_entries(conn, g.user["id"], src)
     for r in rows:
-        db.add_entry(conn, day, r["meal"], r["food_id"], r["amount"])
+        db.add_entry(conn, g.user["id"], day, r["meal"], r["food_id"], r["amount"])
     flash(f"Copied {len(rows)} foods from {src}.")
     return redirect(url_for("day_view", day=day))
 
@@ -197,7 +222,7 @@ def copy_day(day):
 @login_required
 def update_entry(entry_id):
     conn = get_db()
-    row = conn.execute("SELECT day FROM log_entries WHERE id = ?", (entry_id,)).fetchone()
+    row = conn.execute("SELECT day FROM log_entries WHERE id = ? AND user_id = ?", (entry_id, g.user["id"])).fetchone()
     if not row:
         abort(404)
     with conn:
@@ -245,10 +270,10 @@ def targets():
                 values[n] = float(request.form.get(n, "").strip())
             except ValueError:
                 values[n] = None  # blank: no target
-        db.set_targets(conn, values)
+        db.set_targets(conn, g.user["id"], values)
         flash("Targets saved.")
         return redirect(request.form.get("back") or url_for("index"))
-    return render_template("targets.html", targets=db.get_targets(conn), back=request.args.get("back", ""))
+    return render_template("targets.html", targets=db.get_targets(conn, g.user["id"]), back=request.args.get("back", ""))
 
 
 @app.route("/foods/<int:food_id>", methods=["GET", "POST"])
@@ -259,6 +284,8 @@ def edit_food(food_id):
     if not food:
         abort(404)
     if request.method == "POST":
+        if not can_edit_food(food):
+            abort(403)
         if "delete" in request.form:
             if db.delete_food(conn, food_id):
                 flash(f"Deleted {food['name']}.")
@@ -273,7 +300,7 @@ def edit_food(food_id):
         db.update_food(conn, food_id, name, serving.amount, serving.unit, form_nutrients())
         flash(f"Saved {name}.")
         return redirect(url_for("foods", q=name))
-    return render_template("food_edit.html", food=food, serving=db.serving_label(food))
+    return render_template("food_edit.html", food=food, serving=db.serving_label(food), editable=can_edit_food(food))
 
 
 @app.route("/foods/import", methods=["GET", "POST"])
@@ -303,6 +330,63 @@ def import_foods():
     return render_template("import.html")
 
 
+@app.route("/account", methods=["GET", "POST"])
+@login_required
+def account():
+    if request.method == "POST":
+        conn = get_db()
+        current, new, again = (request.form.get(k, "") for k in ("current", "new", "again"))
+        if not db.check_login(conn, g.user["username"], current):
+            flash("Your current password is wrong.")
+        elif len(new) < 6:
+            flash("Use at least 6 characters for the new password.")
+        elif new != again:
+            flash("The new passwords don't match.")
+        else:
+            db.set_password(conn, g.user["id"], new)
+            flash("Password changed.")
+            return redirect(url_for("index"))
+    return render_template("account.html")
+
+
+@app.route("/people", methods=["GET", "POST"])
+@admin_required
+def people():
+    conn = get_db()
+    if request.method == "POST":
+        action = request.form.get("action")
+        uid = request.form.get("user_id", type=int)
+        if action == "add":
+            username = request.form.get("username", "").strip().lower()
+            password = request.form.get("password", "")
+            if not username or " " in username:
+                flash("Pick a username without spaces.")
+            elif len(password) < 6:
+                flash("Use a password of at least 6 characters.")
+            elif conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
+                flash(f"The username {username} is taken.")
+            else:
+                db.create_user(conn, username, request.form.get("name", ""), password)
+                flash(f"Added {username}. Share the web address, username and password with them.")
+        elif action == "reset" and uid:
+            password = request.form.get("password", "")
+            if len(password) < 6:
+                flash("Use a password of at least 6 characters.")
+            else:
+                db.set_password(conn, uid, password)
+                flash("Password reset.")
+        elif action == "delete" and uid and uid != g.user["id"]:
+            db.delete_user(conn, uid)
+            flash("Removed.")
+        return redirect(url_for("people"))
+    users = conn.execute(
+        """SELECT u.*, (SELECT COUNT(DISTINCT day) FROM log_entries l WHERE l.user_id = u.id) AS days_logged,
+                  (SELECT MAX(day) FROM log_entries l WHERE l.user_id = u.id) AS last_day
+           FROM users u ORDER BY u.is_admin DESC, u.name COLLATE NOCASE"""
+    ).fetchall()
+    return render_template("people.html", users=users)
+
+
 @app.route("/foods/new", methods=["GET", "POST"])
 @login_required
 def new_food():
@@ -315,13 +399,13 @@ def new_food():
         conn = get_db()
         serving = request.form.get("serving", "").strip() or "1 serving"
         with conn:
-            fid, base = db.upsert_food(conn, name, serving, nutrients, source="manual")
+            fid, base = db.upsert_food(conn, name, serving, nutrients, source="manual", created_by=g.user["id"])
         day, meal = request.form.get("day"), request.form.get("meal")
         if day and meal:
             food = conn.execute("SELECT * FROM foods WHERE id = ?", (fid,)).fetchone()
             eaten = request.form.get("eaten", "").strip()
             amount = matching.amount_for(food, matching.parse_request(f"x {eaten}"))[0] if eaten else base
-            db.add_entry(conn, parse_day(day), meal, fid, amount)
+            db.add_entry(conn, g.user["id"], parse_day(day), meal, fid, amount)
             flash(f"Saved {name} and added it to {meal}.")
             return redirect(url_for("day_view", day=day))
         flash(f"Saved {name}.")

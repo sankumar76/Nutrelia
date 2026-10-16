@@ -16,6 +16,11 @@ Set daily targets for calories, carbs, fat, protein and fiber (**Targets**), and
 shows the target, what you've eaten, and how much is left. Foods are logged under
 Breakfast, Lunch, Snacks or Dinner.
 
+Several people can use one Nutrelia. The admin adds them on the **People** page; each person
+signs in with their own username and password and has their own log and targets, while
+everyone shares the food library. Foods can be changed by the person who added them or
+the admin.
+
 Each line is matched against your own food history. When a food has more than one
 version (for example *Sambar, 250 g* and *Sambar, 1 cup*), Nutrelia asks which one
 you mean, with the one you've logged most often preselected. Foods it has never seen
@@ -49,8 +54,9 @@ pip install -r requirements.txt
 python app.py            # http://127.0.0.1:5000
 ```
 
-Set `NUTRELIA_PASSWORD` to require a password, and `NUTRELIA_SECRET_KEY` to a long
-random string. `NUTRELIA_DB` overrides the database path (default `data/nutrelia.db`).
+On first start Nutrelia creates the admin account `santhosh` (change with
+`NUTRELIA_ADMIN_USER` / `NUTRELIA_ADMIN_NAME`) with the password in `NUTRELIA_PASSWORD`.
+Set `NUTRELIA_SECRET_KEY` to a long random string. `NUTRELIA_DB` overrides the database path (default `data/nutrelia.db`).
 
 ## Add or edit foods
 

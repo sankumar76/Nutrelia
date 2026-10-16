@@ -11,10 +11,13 @@
   <header class="top">
     <a class="brand" href="{{ url_for('index') }}">Nutrelia<span class="tagline">Understand your food. Nourish your future.</span></a>
     <nav>
+      {% if user %}
       <a href="{{ url_for('index') }}">Today</a>
       <a href="{{ url_for('foods') }}">Foods</a>
       <a href="{{ url_for('targets') }}">Targets</a>
-      {% if auth_enabled and session.ok %}<a href="{{ url_for('logout') }}">Log out</a>{% endif %}
+      {% if user.is_admin %}<a href="{{ url_for('people') }}">People</a>{% endif %}
+      <a href="{{ url_for('account') }}" class="me" title="Account">{{ user.name }}</a>
+      {% endif %}
     </nav>
   </header>
   <main>

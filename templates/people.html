@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>People</h1>
+<p class="muted">Everyone shares the food library. Each person has their own log and targets.</p>
+
+<form method="post" class="card">
+  <h2>Add a person</h2>
+  <input type="hidden" name="action" value="add">
+  <div class="grid">
+    <label>Name <input name="name" placeholder="e.g. Priya" required></label>
+    <label>Username <input name="username" autocapitalize="none" placeholder="e.g. priya" required></label>
+    <label>Password <input name="password" minlength="6" required placeholder="at least 6 characters"></label>
+  </div>
+  <button>Add</button>
+  <p class="muted">They sign in at {{ request.host }} and can change their password from their name in the menu.</p>
+</form>
+
+{% for u in users %}
+<section class="card person">
+  <h2>{{ u.name }} <span class="meal-kcal">{{ u.username }}{% if u.is_admin %} · admin{% endif %}</span></h2>
+  <p class="muted">{{ u.days_logged }} day{{ '' if u.days_logged == 1 else 's' }} logged{% if u.last_day %}, last on {{ u.last_day }}{% endif %}.</p>
+  {% if u.id != user.id %}
+  <details>
+    <summary>Reset password or remove</summary>
+    <form method="post" class="row">
+      <input type="hidden" name="action" value="reset"><input type="hidden" name="user_id" value="{{ u.id }}">
+      <input name="password" minlength="6" placeholder="new password" required style="flex:1;width:auto;margin:0">
+      <button>Reset password</button>
+    </form>
+    <form method="post" class="row" style="margin-top:10px">
+      <input type="hidden" name="action" value="delete"><input type="hidden" name="user_id" value="{{ u.id }}">
+      <button class="danger" data-msg="Remove {{ u.name }} and all of their logged food?" onclick="return confirm(this.dataset.msg)">Remove {{ u.name }}</button>
+    </form>
+  </details>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

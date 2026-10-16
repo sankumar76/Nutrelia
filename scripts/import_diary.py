@@ -47,6 +47,7 @@ def save_history(entries: list[DiaryEntry], path: Path = HISTORY_CSV) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("files", nargs="+", type=Path)
+    ap.add_argument("--user", help="username whose log the days go into (default: the admin)")
     args = ap.parse_args()
 
     new: list[DiaryEntry] = []
@@ -61,7 +62,13 @@ def main() -> None:
     save_history(history)
 
     conn = db.connect()
-    stats = db.import_entries(conn, new)
+    if args.user:
+        user = conn.execute("SELECT id FROM users WHERE username = ?", (args.user,)).fetchone()
+        if not user:
+            sys.exit(f"No user called {args.user}")
+    else:
+        user = conn.execute("SELECT id FROM users WHERE is_admin = 1 ORDER BY id LIMIT 1").fetchone()
+    stats = db.import_entries(conn, new, user["id"] if user else None)
     print(f"Loaded {stats['entries']} rows for {stats['days']} days; "
           f"{stats['new_foods']} new foods, {stats['total_foods']} unique foods in the library.")
 
