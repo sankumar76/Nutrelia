@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "_macros.html" import nutrient_cells, nutrient_head with context %}
+{% block title %}{{ d.strftime('%a, %b %-d') }} · BiteLedger{% endblock %}
+{% block content %}
+<div class="daynav">
+  <a href="{{ url_for('day_view', day=prev_day) }}" aria-label="Previous day">‹</a>
+  <form method="get" onsubmit="location.href='{{ url_for('day_view', day='') }}'+this.d.value;return false">
+    <input type="date" name="d" value="{{ day }}" onchange="this.form.onsubmit()">
+  </form>
+  <a href="{{ url_for('day_view', day=next_day) }}" aria-label="Next day">›</a>
+</div>
+<h1>{{ d.strftime('%A, %B %-d, %Y') }}</h1>
+
+<section class="card summary">
+  <div><b>{{ day_totals.calories|amount }}</b><small>kcal</small></div>
+  <div><b>{{ day_totals.carbs|amount('g') }}</b><small>carbs</small></div>
+  <div><b>{{ day_totals.fat|amount('g') }}</b><small>fat</small></div>
+  <div><b>{{ day_totals.protein|amount('g') }}</b><small>protein</small></div>
+  <div><b>{{ day_totals.fiber|amount('g') }}</b><small>fiber</small></div>
+</section>
+
+<form class="card" method="post" action="{{ url_for('match', day=day) }}">
+  <h2>Add foods</h2>
+  <label>Meal
+    <select name="meal">{% for m in MEALS %}<option {% if m == default_meal %}selected{% endif %}>{{ m }}</option>{% endfor %}</select>
+  </label>
+  <label>What did you eat? <small>One per line or separated by commas. Add “x2” for double.</small>
+    <textarea name="foods" rows="4" placeholder="sambar&#10;2 x chapathi&#10;egg white&#10;tofu" required></textarea>
+  </label>
+  <button>Find foods</button>
+</form>
+
+{% for meal in MEALS %}{% set rows = by_meal[meal] %}{% if rows or meal != 'Lunch' %}
+<section class="card">
+  <h2>{{ meal }} <span class="meal-kcal">{{ meal_totals[meal].calories|amount }} kcal</span></h2>
+  {% if rows %}
+  <div class="scroll"><table>
+    <thead><tr><th>Food</th><th>Qty</th>{{ nutrient_head() }}<th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ r.name }}<br><small>{{ r.serving }}</small></td>
+        <td>
+          <form method="post" action="{{ url_for('update_entry', entry_id=r.entry_id) }}" class="inline">
+            <input class="qty" type="number" name="quantity" value="{{ r.quantity|amount }}" step="0.25" min="0" onchange="this.form.submit()">
+          </form>
+        </td>
+        {{ nutrient_cells(r.scaled) }}
+        <td>
+          <form method="post" action="{{ url_for('update_entry', entry_id=r.entry_id) }}" class="inline">
+            <button name="delete" value="1" class="link" aria-label="Remove" title="Remove">✕</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="muted">Nothing logged.</p>{% endif %}
+</section>
+{% endif %}{% endfor %}
+
+<details class="card">
+  <summary>Copy another day's foods into this day</summary>
+  <form method="post" action="{{ url_for('copy_day', day=day) }}" class="row">
+    <input type="date" name="from" value="{{ prev_day }}" required>
+    <button>Copy</button>
+  </form>
+</details>
+{% endblock %}

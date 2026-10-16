@@ -1,0 +1,11 @@
+{% macro nutrient_cells(values) -%}
+  {% for n in NUTRIENTS %}<td class="num n-{{ n }}">{{ values[n]|amount(UNITS[n]) }}</td>{% endfor %}
+{%- endmacro %}
+{% macro nutrient_head() -%}
+  <th class="num">Cal</th><th class="num">Carbs</th><th class="num">Fat</th><th class="num">Protein</th>
+  <th class="num n-cholesterol">Chol</th><th class="num n-sodium">Sodium</th><th class="num n-sugar">Sugar</th><th class="num n-fiber">Fiber</th>
+{%- endmacro %}
+{% macro food_summary(f) -%}
+  <span class="kcal">{{ f.calories|amount }} kcal</span>
+  <span class="macros">C {{ f.carbs|amount('g') }} · F {{ f.fat|amount('g') }} · P {{ f.protein|amount('g') }}{% if f.fiber is not none %} · Fiber {{ f.fiber|amount('g') }}{% endif %}</span>
+{%- endmacro %}

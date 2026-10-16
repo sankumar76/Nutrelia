@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_macros.html" import nutrient_cells, nutrient_head with context %}
+{% block content %}
+<h1>Your foods <small class="muted">{{ rows|length }}</small></h1>
+<form method="get" class="row">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search foods">
+  <button>Search</button>
+  <a href="{{ url_for('new_food') }}">+ New food</a>
+</form>
+<div class="card scroll"><table>
+  <thead><tr><th>Food</th><th>Serving</th>{{ nutrient_head() }}<th class="num">Logged</th></tr></thead>
+  <tbody>{% for r in rows %}
+    <tr><td>{{ r.name }}</td><td>{{ r.serving }}</td>{{ nutrient_cells(r) }}<td class="num">{{ r.times_logged }}</td></tr>
+  {% endfor %}</tbody>
+</table></div>
+{% endblock %}

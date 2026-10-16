@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "_macros.html" import food_summary with context %}
+{% block content %}
+<h1>Confirm {{ meal }} foods</h1>
+<p class="muted">For {{ day }}. Pick the right entry where there's more than one.</p>
+<form method="post" action="{{ url_for('add', day=day) }}">
+  <input type="hidden" name="meal" value="{{ meal }}">
+  <input type="hidden" name="count" value="{{ lines|length }}">
+  {% for line in lines %}{% set i = loop.index0 %}
+  <fieldset class="card match {{ line.status }}">
+    <legend>“{{ line.text }}”
+      {% if line.status == 'choose' %}<span class="badge warn">{{ line.options|length }} matches, pick one</span>
+      {% elif line.status == 'auto' %}<span class="badge ok">matched</span>
+      {% else %}<span class="badge bad">not in your foods</span>{% endif %}
+    </legend>
+    {% for f in line.options %}
+      <label class="option">
+        <input type="radio" name="food_{{ i }}" value="{{ f.id }}" {% if loop.first and line.status != 'weak' %}checked{% endif %}>
+        <span><b>{{ f.name }}</b>, {{ f.serving }}<br>{{ food_summary(f) }}
+        <small class="muted">· logged {{ f.times_logged }}×{% if f.last_logged %}, last {{ f.last_logged }}{% endif %}</small></span>
+      </label>
+    {% endfor %}
+    <label class="option">
+      <input type="radio" name="food_{{ i }}" value="skip" {% if line.status in ('weak', 'none') %}checked{% endif %}>
+      <span>Skip this one</span>
+    </label>
+    <div class="row">
+      <label>Servings (× the serving shown) <input class="qty" type="number" name="qty_{{ i }}" value="{{ line.quantity|amount }}" step="0.25" min="0"></label>
+      <a href="{{ url_for('new_food', name=line.query, day=day, meal=meal, quantity=line.quantity) }}" target="_blank">Add “{{ line.query }}” as a new food</a>
+    </div>
+  </fieldset>
+  {% endfor %}
+  <button>Add to {{ meal }}</button>
+  <a href="{{ url_for('day_view', day=day) }}">Cancel</a>
+</form>
+{% endblock %}

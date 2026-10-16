@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="post" class="card narrow">
+  <h1>New food</h1>
+  <label>Name <input name="name" value="{{ form.get('name', '') }}" required></label>
+  <label>Serving <input name="serving" value="{{ form.get('serving', '') }}" placeholder="e.g. 100 g, 1 cup"></label>
+  <div class="grid">
+  {% for n in NUTRIENTS %}
+    <label>{{ n|capitalize }}{% if UNITS[n] %} ({{ UNITS[n] }}){% endif %}
+      <input type="number" step="any" min="0" name="{{ n }}" value="{{ form.get(n, '') }}" {% if n == 'calories' %}required{% endif %}></label>
+  {% endfor %}
+  </div>
+  {% if form.get('day') %}
+    <input type="hidden" name="day" value="{{ form.get('day') }}">
+    <label>Add to {{ form.get('day') }}
+      <select name="meal">{% for m in MEALS %}<option {% if m == form.get('meal') %}selected{% endif %}>{{ m }}</option>{% endfor %}</select></label>
+    <label>Servings <input type="number" step="0.25" name="quantity" value="{{ form.get('quantity', 1) }}"></label>
+  {% endif %}
+  <button>Save</button>
+</form>
+{% endblock %}
