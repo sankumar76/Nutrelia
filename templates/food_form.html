@@ -3,7 +3,8 @@
 <form method="post" class="card narrow">
   <h1>New food</h1>
   <label>Name <input name="name" value="{{ form.get('name', '') }}" required></label>
-  <label>Serving <input name="serving" value="{{ form.get('serving', '') }}" placeholder="e.g. 100 g, 1 cup"></label>
+  <label>Nutrition below is for <small>e.g. 100 g, 1 cup, 2 slice</small>
+    <input name="serving" value="{{ form.get('serving', '') }}" placeholder="100 g" required></label>
   <div class="grid">
   {% for n in NUTRIENTS %}
     <label>{{ n|capitalize }}{% if UNITS[n] %} ({{ UNITS[n] }}){% endif %}
@@ -14,7 +15,8 @@
     <input type="hidden" name="day" value="{{ form.get('day') }}">
     <label>Add to {{ form.get('day') }}
       <select name="meal">{% for m in MEALS %}<option {% if m == form.get('meal') %}selected{% endif %}>{{ m }}</option>{% endfor %}</select></label>
-    <label>Servings <input type="number" step="0.25" name="quantity" value="{{ form.get('quantity', 1) }}"></label>
+    <label>How much you ate <small>blank = the amount above</small>
+      <input name="eaten" value="{{ form.get('eaten', '') }}" placeholder="e.g. 150 g"></label>
   {% endif %}
   <button>Save</button>
 </form>

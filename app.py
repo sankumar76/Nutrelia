@@ -68,12 +68,21 @@ def parse_day(value: str) -> str:
         abort(404)
 
 
-def totals(rows, qty_key="quantity") -> dict:
+def totals(rows) -> dict:
+    """Sum the already-scaled nutrition of log rows."""
     out = {}
     for n in NUTRIENTS:
-        vals = [(r[n] * r[qty_key]) for r in rows if r[n] is not None]
+        vals = [r["scaled"][n] for r in rows if r["scaled"][n] is not None]
         out[n] = round(sum(vals)) if vals else None
     return out
+
+
+def form_amount(name: str, default: float) -> float:
+    try:
+        value = float(request.form.get(name, "") or default)
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 @app.template_filter("amount")
@@ -119,7 +128,7 @@ def day_view(day):
     day = parse_day(day)
     rows = [dict(r) for r in db.day_entries(get_db(), day)]
     for r in rows:
-        r["scaled"] = {n: None if r[n] is None else r[n] * r["quantity"] for n in NUTRIENTS}
+        r["scaled"] = db.scale(r, r["amount"])
     by_meal = {m: [r for r in rows if r["meal"] == m] for m in db.MEAL_ORDER}
     d = date.fromisoformat(day)
     return render_template(
@@ -154,11 +163,10 @@ def add(day):
         choice = request.form.get(f"food_{i}", "")
         if not choice.isdigit():
             continue  # skipped
-        try:
-            qty = float(request.form.get(f"qty_{i}", "1") or 1)
-        except ValueError:
-            qty = 1
-        db.add_entry(conn, day, meal, int(choice), qty)
+        food = conn.execute("SELECT * FROM foods WHERE id = ?", (int(choice),)).fetchone()
+        if not food:
+            continue
+        db.add_entry(conn, day, meal, food["id"], form_amount(f"amount_{i}_{choice}", food["base_amount"]))
         added += 1
     flash(f"Added {added} food{'s' if added != 1 else ''} to {meal}.")
     return redirect(url_for("day_view", day=day))
@@ -172,7 +180,7 @@ def copy_day(day):
     conn = get_db()
     rows = db.day_entries(conn, src)
     for r in rows:
-        db.add_entry(conn, day, r["meal"], r["food_id"], r["quantity"])
+        db.add_entry(conn, day, r["meal"], r["food_id"], r["amount"])
     flash(f"Copied {len(rows)} foods from {src}.")
     return redirect(url_for("day_view", day=day))
 
@@ -188,11 +196,9 @@ def update_entry(entry_id):
         if "delete" in request.form:
             conn.execute("DELETE FROM log_entries WHERE id = ?", (entry_id,))
         else:
-            try:
-                qty = float(request.form.get("quantity", "1"))
-            except ValueError:
-                qty = 1
-            conn.execute("UPDATE log_entries SET quantity = ? WHERE id = ?", (qty, entry_id))
+            amount = form_amount("amount", 0)
+            if amount:
+                conn.execute("UPDATE log_entries SET amount = ? WHERE id = ?", (amount, entry_id))
     return redirect(url_for("day_view", day=row["day"]))
 
 
@@ -224,11 +230,15 @@ def new_food():
             v = request.form.get(n, "").strip()
             nutrients[n] = float(v) if v else None
         conn = get_db()
+        serving = request.form.get("serving", "").strip() or "1 serving"
         with conn:
-            fid = db.upsert_food(conn, name, request.form.get("serving", "").strip(), nutrients, source="manual")
+            fid, base = db.upsert_food(conn, name, serving, nutrients, source="manual")
         day, meal = request.form.get("day"), request.form.get("meal")
         if day and meal:
-            db.add_entry(conn, parse_day(day), meal, fid, float(request.form.get("quantity") or 1))
+            food = conn.execute("SELECT * FROM foods WHERE id = ?", (fid,)).fetchone()
+            eaten = request.form.get("eaten", "").strip()
+            amount = matching.amount_for(food, matching.parse_request(f"x {eaten}"))[0] if eaten else base
+            db.add_entry(conn, parse_day(day), meal, fid, amount)
             flash(f"Saved {name} and added it to {meal}.")
             return redirect(url_for("day_view", day=day))
         flash(f"Saved {name}.")

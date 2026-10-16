@@ -5,7 +5,7 @@
   <th class="num">Cal</th><th class="num">Carbs</th><th class="num">Fat</th><th class="num">Protein</th>
   <th class="num n-cholesterol">Chol</th><th class="num n-sodium">Sodium</th><th class="num n-sugar">Sugar</th><th class="num n-fiber">Fiber</th>
 {%- endmacro %}
-{% macro food_summary(f) -%}
-  <span class="kcal">{{ f.calories|amount }} kcal</span>
+{% macro food_summary(f) -%}{# f: dict of nutrient totals #}
+  <span class="kcal">{{ f.calories|round|int if f.calories is not none else "–" }} kcal</span>
   <span class="macros">C {{ f.carbs|amount('g') }} · F {{ f.fat|amount('g') }} · P {{ f.protein|amount('g') }}{% if f.fiber is not none %} · Fiber {{ f.fiber|amount('g') }}{% endif %}</span>
 {%- endmacro %}

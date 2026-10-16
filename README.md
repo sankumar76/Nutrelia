@@ -5,9 +5,9 @@ Your MyFitnessPal history, reused. BiteLedger keeps every food you have logged i
 just typing what you ate:
 
 ```
-sambar
-2 x chapathi
-egg white, tofu
+flax seeds 10 tbsp
+chapathi 2
+egg white, tofu 200 g
 ```
 
 Each line is matched against your own food history. When a food has more than one
@@ -26,8 +26,14 @@ can be added by hand.
 | `scripts/import_diary.py` | Imports PDFs into the database and `data/diary_history.csv` |
 | `data/diary_history.csv` | Every food row from the imported diaries; an empty database is seeded from it |
 
-A food counts as a duplicate only when its name, serving and all eight nutrient values
-(calories, carbs, fat, protein, cholesterol, sodium, sugar, fiber) are identical.
+Each food is stored once, with its nutrition for one base serving. MFP rows that are
+just different sizes of the same food (*Flax seeds, 1 tbsp* and *Flax seeds, 2 tbsp*) are
+merged, and the log records how much you ate, so `flax seeds 10 tbsp`, `200 g tofu`,
+`egg white 4` or `2 x chapathi` (two usual servings) are all scaled for you. Grams,
+ounces, pounds, teaspoons, tablespoons and cups convert into each other.
+Rows with the same name whose nutrition doesn't scale (different brands or recipes), or
+whose units can't be converted (*250 g* vs *1 cup*), stay separate, and the app asks
+which one you mean.
 
 ## Run locally
 

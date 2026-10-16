@@ -10,7 +10,7 @@
 <div class="card scroll"><table>
   <thead><tr><th>Food</th><th>Serving</th>{{ nutrient_head() }}<th class="num">Logged</th></tr></thead>
   <tbody>{% for r in rows %}
-    <tr><td>{{ r.name }}</td><td>{{ r.serving }}</td>{{ nutrient_cells(r) }}<td class="num">{{ r.times_logged }}</td></tr>
+    <tr><td>{{ r.name }}</td><td>{{ r.base_amount|amount }} {{ r.unit }}</td>{{ nutrient_cells(r) }}<td class="num">{{ r.times_logged }}</td></tr>
   {% endfor %}</tbody>
 </table></div>
 {% endblock %}

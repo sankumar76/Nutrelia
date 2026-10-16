@@ -62,3 +62,9 @@ details form { margin-top: 10px; }
   .n-cholesterol, .n-sodium, .n-sugar, .n-fiber { display: none; }
   .summary b { font-size: 1.05rem; }
 }
+.option { flex-wrap: wrap; }
+.option > label { flex: 1; margin: 0; font-weight: 400; cursor: pointer; }
+.amount-row { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-left: 26px; }
+.amount.inline { display: flex; align-items: center; gap: 6px; }
+.warn-text { color: var(--warn); flex-basis: 100%; }
+.amount-row .qty, .amount .qty { width: 84px; flex: none; margin: 0; }

@@ -2,35 +2,52 @@
 {% from "_macros.html" import food_summary with context %}
 {% block content %}
 <h1>Confirm {{ meal }} foods</h1>
-<p class="muted">For {{ day }}. Pick the right entry where there's more than one.</p>
+<p class="muted">For {{ day }}. Where a food has more than one entry, pick the right one. You can change any amount.</p>
 <form method="post" action="{{ url_for('add', day=day) }}">
   <input type="hidden" name="meal" value="{{ meal }}">
   <input type="hidden" name="count" value="{{ lines|length }}">
   {% for line in lines %}{% set i = loop.index0 %}
   <fieldset class="card match {{ line.status }}">
     <legend>“{{ line.text }}”
-      {% if line.status == 'choose' %}<span class="badge warn">{{ line.options|length }} matches, pick one</span>
+      {% if line.status == 'choose' %}<span class="badge warn">{{ line.options|length }} entries, pick one</span>
       {% elif line.status == 'auto' %}<span class="badge ok">matched</span>
       {% else %}<span class="badge bad">not in your foods</span>{% endif %}
     </legend>
     {% for f in line.options %}
-      <label class="option">
-        <input type="radio" name="food_{{ i }}" value="{{ f.id }}" {% if loop.first and line.status != 'weak' %}checked{% endif %}>
-        <span><b>{{ f.name }}</b>, {{ f.serving }}<br>{{ food_summary(f) }}
-        <small class="muted">· logged {{ f.times_logged }}×{% if f.last_logged %}, last {{ f.last_logged }}{% endif %}</small></span>
-      </label>
+      <div class="option" data-base="{{ f.base_amount }}" data-cal="{{ f.calories or 0 }}" data-carbs="{{ f.carbs or 0 }}" data-fat="{{ f.fat or 0 }}" data-protein="{{ f.protein or 0 }}">
+        <input type="radio" id="o{{ i }}_{{ f.id }}" name="food_{{ i }}" value="{{ f.id }}" {% if loop.first and line.status != 'weak' %}checked{% endif %}>
+        <label for="o{{ i }}_{{ f.id }}">
+          <b>{{ f.name }}</b>
+          <small class="muted">· {{ f.calories|amount }} kcal per {{ f.serving }} · logged {{ f.times_logged }}×</small>
+        </label>
+        <div class="amount-row">
+          <input class="qty" type="number" step="any" min="0" name="amount_{{ i }}_{{ f.id }}" value="{{ f.amount|round(2) }}" aria-label="Amount in {{ f.unit }}">
+          <span>{{ f.unit }}</span>
+          <span class="result">= {{ food_summary(f.totals) }}</span>
+          {% if not f.unit_fits %}<small class="warn-text">Can't convert “{{ line.request.unit }}” to {{ f.unit }}; showing the usual amount.</small>{% endif %}
+        </div>
+      </div>
     {% endfor %}
-    <label class="option">
-      <input type="radio" name="food_{{ i }}" value="skip" {% if line.status in ('weak', 'none') %}checked{% endif %}>
-      <span>Skip this one</span>
-    </label>
-    <div class="row">
-      <label>Servings (× the serving shown) <input class="qty" type="number" name="qty_{{ i }}" value="{{ line.quantity|amount }}" step="0.25" min="0"></label>
-      <a href="{{ url_for('new_food', name=line.query, day=day, meal=meal, quantity=line.quantity) }}" target="_blank">Add “{{ line.query }}” as a new food</a>
+    <div class="option">
+      <input type="radio" id="o{{ i }}_skip" name="food_{{ i }}" value="skip" {% if line.status in ('weak', 'none') %}checked{% endif %}>
+      <label for="o{{ i }}_skip">Skip this one</label>
     </div>
+    <a href="{{ url_for('new_food', name=line.query, day=day, meal=meal, eaten=(line.request.number|amount ~ ' ' ~ (line.request.unit or '')) if line.request.number else '') }}" target="_blank">Add “{{ line.query }}” as a new food</a>
   </fieldset>
   {% endfor %}
   <button>Add to {{ meal }}</button>
   <a href="{{ url_for('day_view', day=day) }}">Cancel</a>
 </form>
+<script>
+// keep the totals next to each amount box in step with what's typed, and select the row being edited
+document.querySelectorAll('.option[data-base]').forEach(function (opt) {
+  var input = opt.querySelector('.qty'), out = opt.querySelector('.result');
+  input.addEventListener('input', function () {
+    var k = (parseFloat(input.value) || 0) / parseFloat(opt.dataset.base);
+    var r = function (n) { return Math.round(parseFloat(opt.dataset[n]) * k); };
+    out.innerHTML = '= <span class="kcal">' + r('cal') + ' kcal</span> <span class="macros">C ' + r('carbs') + 'g · F ' + r('fat') + 'g · P ' + r('protein') + 'g</span>';
+    opt.querySelector('input[type=radio]').checked = true;
+  });
+});
+</script>
 {% endblock %}

@@ -24,8 +24,8 @@
   <label>Meal
     <select name="meal">{% for m in MEALS %}<option {% if m == default_meal %}selected{% endif %}>{{ m }}</option>{% endfor %}</select>
   </label>
-  <label>What did you eat? <small>One per line or separated by commas. Add “x2” for double.</small>
-    <textarea name="foods" rows="4" placeholder="sambar&#10;2 x chapathi&#10;egg white&#10;tofu" required></textarea>
+  <label>What did you eat? <small>One per line or comma separated. Add amounts like “10 tbsp”, “200 g”, “3” or “2 x” (two usual servings).</small>
+    <textarea name="foods" rows="4" placeholder="flax seeds 3 tbsp&#10;chapathi 2&#10;egg white&#10;tofu 200 g" required></textarea>
   </label>
   <button>Find foods</button>
 </form>
@@ -35,14 +35,15 @@
   <h2>{{ meal }} <span class="meal-kcal">{{ meal_totals[meal].calories|amount }} kcal</span></h2>
   {% if rows %}
   <div class="scroll"><table>
-    <thead><tr><th>Food</th><th>Qty</th>{{ nutrient_head() }}<th></th></tr></thead>
+    <thead><tr><th>Food</th><th>Amount</th>{{ nutrient_head() }}<th></th></tr></thead>
     <tbody>
     {% for r in rows %}
       <tr>
-        <td>{{ r.name }}<br><small>{{ r.serving }}</small></td>
+        <td>{{ r.name }}</td>
         <td>
-          <form method="post" action="{{ url_for('update_entry', entry_id=r.entry_id) }}" class="inline">
-            <input class="qty" type="number" name="quantity" value="{{ r.quantity|amount }}" step="0.25" min="0" onchange="this.form.submit()">
+          <form method="post" action="{{ url_for('update_entry', entry_id=r.entry_id) }}" class="inline amount">
+            <input class="qty" type="number" name="amount" value="{{ r.amount|round(2) }}" step="any" min="0" onchange="this.form.submit()">
+            <small>{{ r.unit }}</small>
           </form>
         </td>
         {{ nutrient_cells(r.scaled) }}
