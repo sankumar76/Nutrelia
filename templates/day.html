@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import nutrient_cells, nutrient_head with context %}
-{% block title %}{{ d.strftime('%a, %b %-d') }} · BiteLedger{% endblock %}
+{% block title %}{{ d.strftime('%a, %b %-d') }} · Nutrelia{% endblock %}
 {% block content %}
 <div class="daynav">
   <a href="{{ url_for('day_view', day=prev_day) }}" aria-label="Previous day">‹</a>

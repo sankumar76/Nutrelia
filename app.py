@@ -1,4 +1,4 @@
-"""BiteLedger web app: build a day's food log by listing what you ate."""
+"""Nutrelia web app: build a day's food log by listing what you ate."""
 from __future__ import annotations
 
 import hmac
@@ -13,14 +13,14 @@ from flask import Flask, abort, flash, g, redirect, render_template, request, se
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from biteledger import db, matching  # noqa: E402
-from biteledger.diary_parser import NUTRIENTS  # noqa: E402
+from nutrelia import db, matching  # noqa: E402
+from nutrelia.diary_parser import NUTRIENTS  # noqa: E402
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("BITELEDGER_SECRET_KEY", "dev-only-change-me")
+app.secret_key = os.environ.get("NUTRELIA_SECRET_KEY", "dev-only-change-me")
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   PERMANENT_SESSION_LIFETIME=timedelta(days=60))
-PASSWORD = os.environ.get("BITELEDGER_PASSWORD", "")
+PASSWORD = os.environ.get("NUTRELIA_PASSWORD", "")
 UNITS = {"calories": "", "carbs": "g", "fat": "g", "protein": "g", "cholesterol": "mg", "sodium": "mg", "sugar": "g", "fiber": "g"}
 
 

@@ -1,4 +1,4 @@
-"""Import MyFitnessPal Printable Diary PDFs into BiteLedger.
+"""Import MyFitnessPal Printable Diary PDFs into Nutrelia.
 
     python scripts/import_diary.py MyFitnessPal_Oct_2025.pdf MyFitnessPal_Nov_2025.pdf ...
 
@@ -15,8 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from biteledger import db  # noqa: E402
-from biteledger.diary_parser import DiaryEntry, parse_pdf, parse_text  # noqa: E402
+from nutrelia import db  # noqa: E402
+from nutrelia.diary_parser import DiaryEntry, parse_pdf, parse_text  # noqa: E402
 
 HISTORY_CSV = ROOT / "data" / "diary_history.csv"
 

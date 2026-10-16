@@ -6,8 +6,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from biteledger import db, matching  # noqa: E402
-from biteledger.diary_parser import parse_text, split_serving  # noqa: E402
+from nutrelia import db, matching  # noqa: E402
+from nutrelia.diary_parser import parse_text, split_serving  # noqa: E402
 
 SAMPLE = """
                                           Printable Diary for someone
@@ -121,7 +121,7 @@ def test_split_lines():
 
 
 def test_app_flow(tmp_path, monkeypatch):
-    monkeypatch.setenv("BITELEDGER_DB", str(tmp_path / "app.db"))
+    monkeypatch.setenv("NUTRELIA_DB", str(tmp_path / "app.db"))
     import importlib
     import app as app_module
     importlib.reload(app_module)

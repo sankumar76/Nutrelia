@@ -42,7 +42,7 @@ MEAL_ORDER = ["Breakfast", "Lunch", "Dinner", "Snacks"]
 
 
 def db_path() -> str:
-    return os.environ.get("BITELEDGER_DB", str(Path(__file__).resolve().parent.parent / "data" / "biteledger.db"))
+    return os.environ.get("NUTRELIA_DB", str(Path(__file__).resolve().parent.parent / "data" / "nutrelia.db"))
 
 
 def connect(path: str | None = None) -> sqlite3.Connection:
