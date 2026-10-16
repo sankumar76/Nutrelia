@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="post" class="card narrow">
+  <h1>Edit food</h1>
+  <label>Name <input name="name" value="{{ food.name }}" required></label>
+  <label>Nutrition below is for <small>e.g. 100 g, 1 cup, 2 slice</small>
+    <input name="serving" value="{{ serving }}" required></label>
+  <div class="grid">
+  {% for n in NUTRIENTS %}
+    <label>{{ n|capitalize }}{% if UNITS[n] %} ({{ UNITS[n] }}){% endif %}
+      <input type="number" step="any" min="0" name="{{ n }}" value="{{ food[n]|amount if food[n] is not none else '' }}" {% if n == 'calories' %}required{% endif %} inputmode="decimal"></label>
+  {% endfor %}
+  </div>
+  <p class="muted">Logged {{ food.times_logged }}×{% if food.last_logged %}, last on {{ food.last_logged }}{% endif %}. Changes also update the totals of days where you logged it.</p>
+  <div class="row">
+    <button>Save</button>
+    <a href="{{ url_for('foods') }}">Cancel</a>
+    {% if not food.times_logged %}
+      <button name="delete" value="1" class="danger" formnovalidate data-msg="Delete {{ food.name }}?" onclick="return confirm(this.dataset.msg)">Delete</button>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}

@@ -13,6 +13,7 @@
     <nav>
       <a href="{{ url_for('index') }}">Today</a>
       <a href="{{ url_for('foods') }}">Foods</a>
+      <a href="{{ url_for('targets') }}">Targets</a>
       {% if auth_enabled and session.ok %}<a href="{{ url_for('logout') }}">Log out</a>{% endif %}
     </nav>
   </header>

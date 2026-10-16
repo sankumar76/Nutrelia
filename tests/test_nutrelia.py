@@ -138,3 +138,41 @@ def test_app_flow(tmp_path, monkeypatch):
 
 def test_split_lines_keeps_serving_with_name():
     assert matching.split_lines("egg white, 3 large\n2 x tofu") == ["egg white, 3 large", "2 x tofu"]
+
+
+def test_targets_roundtrip(conn):
+    assert db.get_targets(conn) == {"calories": None, "carbs": None, "fat": None, "protein": None, "fiber": None}
+    db.set_targets(conn, {"calories": 1800, "protein": 90})
+    assert db.get_targets(conn)["calories"] == 1800 and db.get_targets(conn)["fat"] is None
+
+
+def test_edit_and_delete_food(conn):
+    fid, _ = db.upsert_food(conn, "Pizza slice", "1 slice", {"calories": 285})
+    db.update_food(conn, fid, "Pizza", 2, "slice", {"calories": 560, "protein": 24})
+    row = conn.execute("SELECT * FROM foods WHERE id = ?", (fid,)).fetchone()
+    assert (row["name"], row["base_amount"], row["calories"]) == ("Pizza", 2, 560)
+    assert db.delete_food(conn, fid)
+    logged = conn.execute("SELECT food_id FROM log_entries LIMIT 1").fetchone()[0]
+    assert not db.delete_food(conn, logged)
+
+
+def test_add_foods_only_leaves_log_alone(conn):
+    before = conn.execute("SELECT COUNT(*) FROM log_entries").fetchone()[0]
+    stats = db.add_foods_only(conn, parse_text(SAMPLE.replace("Egg white", "Quinoa")))
+    assert stats["new_foods"] == 1
+    assert conn.execute("SELECT COUNT(*) FROM log_entries").fetchone()[0] == before
+
+
+def test_pypdf_style_continuation_lines():
+    text = """
+                                 Oct 2, 2025
+    Breakfast
+    Hemp Hearts - Hemp Hearts, Raw Shelled Hemp Seeds, 1    57     1g  4g      3g    0mg      1mg     0g     1g
+    tbsp
+
+    Peanuts, 50 gram(s)                     294     11g25g      12g     0mg     3mg     2g    4g
+"""
+    rows = parse_text(text)
+    assert [(r.name, r.serving) for r in rows] == [
+        ("Hemp Hearts - Hemp Hearts, Raw Shelled Hemp Seeds", "1 tbsp"), ("Peanuts", "50 gram(s)")]
+    assert rows[1].fat == 25

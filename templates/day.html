@@ -11,28 +11,54 @@
 </div>
 <h1>{{ d.strftime('%A, %B %-d, %Y') }}</h1>
 
-<section class="card summary">
-  <div><b>{{ day_totals.calories|amount }}</b><small>kcal</small></div>
-  <div><b>{{ day_totals.carbs|amount('g') }}</b><small>carbs</small></div>
-  <div><b>{{ day_totals.fat|amount('g') }}</b><small>fat</small></div>
-  <div><b>{{ day_totals.protein|amount('g') }}</b><small>protein</small></div>
-  <div><b>{{ day_totals.fiber|amount('g') }}</b><small>fiber</small></div>
+<section class="card goals">
+  <div class="goals-head">
+    <h2>Totals vs target</h2>
+    <a href="{{ url_for('targets', back=request.path) }}">{% if targets.values()|select|list %}Edit targets{% else %}Set targets{% endif %}</a>
+  </div>
+  <div class="goal-grid">
+  {% for n, label, unit in [('calories', 'Calories', ''), ('carbs', 'Carbs', 'g'), ('fat', 'Fat', 'g'), ('protein', 'Protein', 'g'), ('fiber', 'Fiber', 'g')] %}
+    {% set t = targets[n] %}{% set a = day_totals[n] or 0 %}
+    <div class="goal">
+      <span class="goal-label">{{ label }}</span>
+      <span class="goal-target">Target {{ t|amount(unit) if t else '–' }}</span>
+      <b class="goal-actual">{{ a|amount(unit) }}</b>
+      {% if t %}
+        {% set pct = (a / t * 100) %}
+        <span class="bar"><span class="fill {% if pct > 105 %}over{% endif %}" style="width: {{ [pct, 100]|min }}%"></span></span>
+        <small class="{% if a > t %}over-text{% else %}muted{% endif %}">{% if a > t %}{{ (a - t)|amount(unit) }} over{% else %}{{ (t - a)|amount(unit) }} left{% endif %}</small>
+      {% endif %}
+    </div>
+  {% endfor %}
+  </div>
 </section>
 
-<form class="card" method="post" action="{{ url_for('match', day=day) }}">
+<form class="card" id="add" method="post" action="{{ url_for('match', day=day) }}">
   <h2>Add foods</h2>
-  <label>Meal
-    <select name="meal">{% for m in MEALS %}<option {% if m == default_meal %}selected{% endif %}>{{ m }}</option>{% endfor %}</select>
-  </label>
+  <div class="meal-pills" role="radiogroup" aria-label="Meal">
+    {% for m in MEALS %}
+      <label class="pill"><input type="radio" name="meal" value="{{ m }}" {% if m == default_meal %}checked{% endif %} required><span>{{ m }}</span></label>
+    {% endfor %}
+  </div>
   <label>What did you eat? <small>One per line or comma separated. Add amounts like “10 tbsp”, “200 g”, “3” or “2 x” (two usual servings).</small>
     <textarea name="foods" rows="4" placeholder="flax seeds 3 tbsp&#10;chapathi 2&#10;egg white&#10;tofu 200 g" required></textarea>
   </label>
   <button>Find foods</button>
 </form>
+<script>
+  // No meal chosen yet: pick one from the time of day on your device.
+  (function () {
+    var form = document.getElementById('add');
+    if (form.querySelector('input[name=meal]:checked')) return;
+    var h = new Date().getHours();
+    var meal = h < 11 ? 'Breakfast' : h < 15 ? 'Lunch' : h < 18 ? 'Snacks' : 'Dinner';
+    form.querySelector('input[value="' + meal + '"]').checked = true;
+  })();
+</script>
 
-{% for meal in MEALS %}{% set rows = by_meal[meal] %}{% if rows or meal != 'Lunch' %}
+{% for meal in MEALS %}{% set rows = by_meal[meal] %}
 <section class="card">
-  <h2>{{ meal }} <span class="meal-kcal">{{ meal_totals[meal].calories|amount }} kcal</span></h2>
+  <h2>{{ meal }} <span class="meal-kcal">{{ meal_totals[meal].calories|amount }} kcal · <a href="{{ url_for('day_view', day=day, meal=meal) }}#add">+ Add</a></span></h2>
   {% if rows %}
   <div class="scroll"><table>
     <thead><tr><th>Food</th><th>Amount</th>{{ nutrient_head() }}<th></th></tr></thead>
@@ -42,7 +68,7 @@
         <td>{{ r.name }}</td>
         <td>
           <form method="post" action="{{ url_for('update_entry', entry_id=r.entry_id) }}" class="inline amount">
-            <input class="qty" type="number" name="amount" value="{{ r.amount|round(2) }}" step="any" min="0" onchange="this.form.submit()">
+            <input class="qty" type="number" name="amount" value="{{ r.amount|qty }}" step="any" min="0" onchange="this.form.submit()">
             <small>{{ r.unit }}</small>
           </form>
         </td>
@@ -58,7 +84,7 @@
   </table></div>
   {% else %}<p class="muted">Nothing logged.</p>{% endif %}
 </section>
-{% endif %}{% endfor %}
+{% endfor %}
 
 <details class="card">
   <summary>Copy another day's foods into this day</summary>

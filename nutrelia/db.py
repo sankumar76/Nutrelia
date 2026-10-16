@@ -36,9 +36,11 @@ CREATE TABLE IF NOT EXISTS log_entries (
     position INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS log_day ON log_entries (day);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 """
 
-MEAL_ORDER = ["Breakfast", "Lunch", "Dinner", "Snacks"]
+MEAL_ORDER = ["Breakfast", "Lunch", "Snacks", "Dinner"]
+TARGET_NUTRIENTS = ["calories", "carbs", "fat", "protein", "fiber"]
 
 
 def db_path() -> str:
@@ -153,3 +155,48 @@ def add_entry(conn: sqlite3.Connection, day: str, meal: str, food_id: int, amoun
             "UPDATE foods SET times_logged = times_logged + 1, last_logged = MAX(IFNULL(last_logged, ''), ?) WHERE id = ?",
             (day, food_id),
         )
+
+
+def get_targets(conn: sqlite3.Connection) -> dict:
+    rows = conn.execute("SELECT key, value FROM settings WHERE key LIKE 'target_%'").fetchall()
+    found = {r["key"][len("target_"):]: float(r["value"]) for r in rows if r["value"]}
+    return {n: found.get(n) for n in TARGET_NUTRIENTS}
+
+
+def set_targets(conn: sqlite3.Connection, targets: dict) -> None:
+    with conn:
+        for n in TARGET_NUTRIENTS:
+            value = targets.get(n)
+            if value is None:
+                conn.execute("DELETE FROM settings WHERE key = ?", (f"target_{n}",))
+            else:
+                conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (f"target_{n}", str(value)))
+
+
+def update_food(conn: sqlite3.Connection, food_id: int, name: str, base_amount: float, unit: str, nutrients: dict) -> None:
+    """Edit a food. Past log entries keep their amounts, so their totals follow the new nutrition."""
+    with conn:
+        conn.execute(
+            f"UPDATE foods SET name = ?, base_amount = ?, unit = ?, {', '.join(f'{n} = ?' for n in NUTRIENTS)} WHERE id = ?",
+            [name, base_amount, unit] + [nutrients.get(n) for n in NUTRIENTS] + [food_id],
+        )
+
+
+def delete_food(conn: sqlite3.Connection, food_id: int) -> bool:
+    """Delete a food that has never been logged. Returns False if it is in the log."""
+    if conn.execute("SELECT 1 FROM log_entries WHERE food_id = ? LIMIT 1", (food_id,)).fetchone():
+        return False
+    with conn:
+        conn.execute("DELETE FROM foods WHERE id = ?", (food_id,))
+    return True
+
+
+def add_foods_only(conn: sqlite3.Connection, entries: list[DiaryEntry]) -> dict:
+    """Add the foods from diary rows to the library without touching the daily log."""
+    before = conn.execute("SELECT COUNT(*) FROM foods").fetchone()[0]
+    freq = Counter((e.name, e.serving, tuple(e.nutrients().values())) for e in entries)
+    with conn:
+        for (name, serving, values), _n in freq.most_common():
+            upsert_food(conn, name, serving, dict(zip(NUTRIENTS, values)))
+    after = conn.execute("SELECT COUNT(*) FROM foods").fetchone()[0]
+    return {"rows": len(entries), "new_foods": after - before, "total_foods": after}

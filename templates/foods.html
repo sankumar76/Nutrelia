@@ -5,12 +5,16 @@
 <form method="get" class="row">
   <input type="search" name="q" value="{{ q }}" placeholder="Search foods">
   <button>Search</button>
-  <a href="{{ url_for('new_food') }}">+ New food</a>
 </form>
+<div class="row actions">
+  <a class="button" href="{{ url_for('new_food') }}">+ New food</a>
+  <a class="button secondary" href="{{ url_for('import_foods') }}">Add from MyFitnessPal PDF</a>
+</div>
+<p class="muted">Tap a food to edit it.</p>
 <div class="card scroll"><table>
   <thead><tr><th>Food</th><th>Serving</th>{{ nutrient_head() }}<th class="num">Logged</th></tr></thead>
   <tbody>{% for r in rows %}
-    <tr><td>{{ r.name }}</td><td>{{ r.base_amount|amount }} {{ r.unit }}</td>{{ nutrient_cells(r) }}<td class="num">{{ r.times_logged }}</td></tr>
+    <tr><td><a href="{{ url_for('edit_food', food_id=r.id) }}">{{ r.name }}</a></td><td>{{ r.base_amount|amount }} {{ r.unit }}</td>{{ nutrient_cells(r) }}<td class="num">{{ r.times_logged }}</td></tr>
   {% endfor %}</tbody>
 </table></div>
 {% endblock %}

@@ -4,6 +4,7 @@ from __future__ import annotations
 import hmac
 import os
 import sys
+import tempfile
 from datetime import date, timedelta
 from functools import wraps
 from pathlib import Path
@@ -14,11 +15,12 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from nutrelia import db, matching  # noqa: E402
-from nutrelia.diary_parser import NUTRIENTS  # noqa: E402
+from nutrelia.diary_parser import NUTRIENTS, parse_pdf  # noqa: E402
+from nutrelia.units import fmt_amount, parse_serving  # noqa: E402
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("NUTRELIA_SECRET_KEY", "dev-only-change-me")
-app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
+app.config.update(MAX_CONTENT_LENGTH=40 * 1024 * 1024, SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   PERMANENT_SESSION_LIFETIME=timedelta(days=60))
 PASSWORD = os.environ.get("NUTRELIA_PASSWORD", "")
 UNITS = {"calories": "", "carbs": "g", "fat": "g", "protein": "g", "cholesterol": "mg", "sodium": "mg", "sugar": "g", "fiber": "g"}
@@ -93,6 +95,11 @@ def amount(value, unit=""):
     return f"{int(value) if float(value).is_integer() else value}{unit}"
 
 
+@app.template_filter("qty")
+def qty(value):
+    return fmt_amount(value) if value is not None else ""
+
+
 @app.context_processor
 def inject():
     return {"NUTRIENTS": NUTRIENTS, "UNITS": UNITS, "MEALS": db.MEAL_ORDER, "auth_enabled": bool(PASSWORD)}
@@ -119,7 +126,8 @@ def logout():
 @app.route("/")
 @login_required
 def index():
-    return redirect(url_for("day_view", day=date.today().isoformat()))
+    # The server runs on UTC, so let the browser pick "today" in your own time zone.
+    return render_template("today.html")
 
 
 @app.route("/day/<day>")
@@ -132,10 +140,10 @@ def day_view(day):
     by_meal = {m: [r for r in rows if r["meal"] == m] for m in db.MEAL_ORDER}
     d = date.fromisoformat(day)
     return render_template(
-        "day.html", day=day, d=d, by_meal=by_meal, day_totals=totals(rows),
+        "day.html", day=day, d=d, by_meal=by_meal, day_totals=totals(rows), targets=db.get_targets(get_db()),
         meal_totals={m: totals(v) for m, v in by_meal.items()},
         prev_day=(d - timedelta(days=1)).isoformat(), next_day=(d + timedelta(days=1)).isoformat(),
-        default_meal=request.args.get("meal", "Breakfast"),
+        default_meal=request.args.get("meal", ""),
     )
 
 
@@ -209,12 +217,90 @@ def foods():
     conn = get_db()
     if q:
         rows = conn.execute(
-            "SELECT * FROM foods WHERE name LIKE ? OR serving LIKE ? ORDER BY name, times_logged DESC",
-            (f"%{q}%", f"%{q}%"),
+            "SELECT * FROM foods WHERE name LIKE ? ORDER BY name COLLATE NOCASE, times_logged DESC", (f"%{q}%",)
         ).fetchall()
     else:
         rows = conn.execute("SELECT * FROM foods ORDER BY name COLLATE NOCASE, times_logged DESC").fetchall()
     return render_template("foods.html", rows=rows, q=q)
+
+
+def form_nutrients() -> dict:
+    out = {}
+    for n in NUTRIENTS:
+        try:
+            out[n] = float(request.form.get(n, "").strip())
+        except ValueError:
+            out[n] = None
+    return out
+
+
+@app.route("/targets", methods=["GET", "POST"])
+@login_required
+def targets():
+    conn = get_db()
+    if request.method == "POST":
+        values = {}
+        for n in db.TARGET_NUTRIENTS:
+            try:
+                values[n] = float(request.form.get(n, "").strip())
+            except ValueError:
+                values[n] = None  # blank: no target
+        db.set_targets(conn, values)
+        flash("Targets saved.")
+        return redirect(request.form.get("back") or url_for("index"))
+    return render_template("targets.html", targets=db.get_targets(conn), back=request.args.get("back", ""))
+
+
+@app.route("/foods/<int:food_id>", methods=["GET", "POST"])
+@login_required
+def edit_food(food_id):
+    conn = get_db()
+    food = conn.execute("SELECT * FROM foods WHERE id = ?", (food_id,)).fetchone()
+    if not food:
+        abort(404)
+    if request.method == "POST":
+        if "delete" in request.form:
+            if db.delete_food(conn, food_id):
+                flash(f"Deleted {food['name']}.")
+                return redirect(url_for("foods"))
+            flash("This food is in your log, so it can't be deleted. Edit it instead.")
+            return redirect(url_for("edit_food", food_id=food_id))
+        name = request.form.get("name", "").strip()
+        serving = parse_serving(request.form.get("serving", "").strip() or "1 serving")
+        if not name:
+            flash("Name is required.")
+            return redirect(url_for("edit_food", food_id=food_id))
+        db.update_food(conn, food_id, name, serving.amount, serving.unit, form_nutrients())
+        flash(f"Saved {name}.")
+        return redirect(url_for("foods", q=name))
+    return render_template("food_edit.html", food=food, serving=db.serving_label(food))
+
+
+@app.route("/foods/import", methods=["GET", "POST"])
+@login_required
+def import_foods():
+    if request.method == "POST":
+        files = [f for f in request.files.getlist("pdf") if f and f.filename]
+        if not files:
+            flash("Choose at least one PDF.")
+            return redirect(url_for("import_foods"))
+        entries = []
+        with tempfile.TemporaryDirectory() as tmp:
+            for i, f in enumerate(files):
+                path = Path(tmp) / f"diary{i}.pdf"
+                f.save(path)
+                try:
+                    entries += parse_pdf(path)
+                except Exception:  # noqa: BLE001 - report any unreadable file to the user
+                    flash(f"Couldn't read {f.filename}. Is it a MyFitnessPal Printable Diary PDF?")
+        if entries:
+            stats = db.add_foods_only(get_db(), entries)
+            flash(f"Read {stats['rows']} food rows: {stats['new_foods']} new foods added "
+                  f"({stats['total_foods']} foods in total).")
+        elif files:
+            flash("No foods found in that file.")
+        return redirect(url_for("foods"))
+    return render_template("import.html")
 
 
 @app.route("/foods/new", methods=["GET", "POST"])
@@ -225,10 +311,7 @@ def new_food():
         if not name:
             flash("Name is required.")
             return render_template("food_form.html", form=request.form)
-        nutrients = {}
-        for n in NUTRIENTS:
-            v = request.form.get(n, "").strip()
-            nutrients[n] = float(v) if v else None
+        nutrients = form_nutrients()
         conn = get_db()
         serving = request.form.get("serving", "").strip() or "1 serving"
         with conn:

@@ -21,7 +21,7 @@
           <small class="muted">· {{ f.calories|amount }} kcal per {{ f.serving }} · logged {{ f.times_logged }}×</small>
         </label>
         <div class="amount-row">
-          <input class="qty" type="number" step="any" min="0" name="amount_{{ i }}_{{ f.id }}" value="{{ f.amount|round(2) }}" aria-label="Amount in {{ f.unit }}">
+          <input class="qty" type="number" step="any" min="0" name="amount_{{ i }}_{{ f.id }}" value="{{ f.amount|qty }}" aria-label="Amount in {{ f.unit }}">
           <span>{{ f.unit }}</span>
           <span class="result">= {{ food_summary(f.totals) }}</span>
           {% if not f.unit_fits %}<small class="warn-text">Can't convert “{{ line.request.unit }}” to {{ f.unit }}; showing the usual amount.</small>{% endif %}

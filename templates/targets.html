@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="post" class="card narrow">
+  <h1>Daily targets</h1>
+  <p class="muted">These show above each day's totals. Change them whenever you like; leave a box blank for no target.</p>
+  <input type="hidden" name="back" value="{{ back }}">
+  <div class="grid">
+  {% for n, label in [('calories', 'Calories (kcal)'), ('carbs', 'Carbs (g)'), ('fat', 'Fat (g)'), ('protein', 'Protein (g)'), ('fiber', 'Fiber (g)')] %}
+    <label>{{ label }} <input type="number" step="any" min="0" name="{{ n }}" value="{{ targets[n]|amount if targets[n] else '' }}" inputmode="decimal"></label>
+  {% endfor %}
+  </div>
+  <button>Save targets</button>
+</form>
+{% endblock %}

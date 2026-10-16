@@ -12,6 +12,10 @@ chapathi 2
 egg white, tofu 200 g
 ```
 
+Set daily targets for calories, carbs, fat, protein and fiber (**Targets**), and each day
+shows the target, what you've eaten, and how much is left. Foods are logged under
+Breakfast, Lunch, Snacks or Dinner.
+
 Each line is matched against your own food history. When a food has more than one
 version (for example *Sambar, 250 g* and *Sambar, 1 cup*), Nutrelia asks which one
 you mean, with the one you've logged most often preselected. Foods it has never seen
@@ -48,16 +52,26 @@ python app.py            # http://127.0.0.1:5000
 Set `NUTRELIA_PASSWORD` to require a password, and `NUTRELIA_SECRET_KEY` to a long
 random string. `NUTRELIA_DB` overrides the database path (default `data/nutrelia.db`).
 
-## Import more MFP months
+## Add or edit foods
 
-On myfitnesspal.com open **Reports → Printable Diary**, choose a date range, and print
+Everything is in the app's **Foods** page:
+
+- **+ New food**: type a name, the serving the nutrition is for (e.g. `100 g`), and the values.
+- Tap any food to edit its name, serving or nutrition, or to delete it if it has never been logged.
+- **Add from MyFitnessPal PDF**: upload Printable Diary PDFs (Reports → Printable Diary →
+  print → Save as PDF). New foods are added to the library; your Nutrelia log is not touched.
+
+## Import more MFP months from the command line
+
+This also loads the days into the Nutrelia log (replacing those days). On
+myfitnesspal.com open **Reports → Printable Diary**, choose a date range, and print
 it to PDF. Then:
 
 ```bash
 python scripts/import_diary.py ~/Downloads/MyFitnessPal_Feb_2026.pdf
 ```
 
-Needs `pdftotext` (`apt install poppler-utils` / `brew install poppler`). Re-importing
+Uses `pdftotext` (poppler) when installed and falls back to `pypdf` otherwise. Re-importing
 a day replaces it, so running an import twice is safe.
 
 ## Host it on PythonAnywhere (free)
@@ -69,11 +83,11 @@ PythonAnywhere's free plan keeps files on disk, so the SQLite database survives 
    ```bash
    git clone https://github.com/sankumar76/Nutrelia.git nutrelia
    cd nutrelia
-   python3.11 -m venv ~/.venvs/nutrelia
+   python3.12 -m venv ~/.venvs/nutrelia
    ~/.venvs/nutrelia/bin/pip install -r requirements.txt
    ```
    (For a private repo, clone with a GitHub personal access token.)
-3. **Web** tab → *Add a new web app* → *Manual configuration* → Python 3.11.
+3. **Web** tab → *Add a new web app* → *Manual configuration* → Python 3.12.
 4. Set **Virtualenv** to `/home/<user>/.venvs/nutrelia`.
 5. Edit the **WSGI configuration file** so it contains only:
    ```python
@@ -87,7 +101,14 @@ PythonAnywhere's free plan keeps files on disk, so the SQLite database survives 
 
 Free web apps must be renewed from the PythonAnywhere dashboard once every three months.
 
-To update later: `cd ~/nutrelia && git pull`, then **Reload**.
+To update later, in a Bash console:
+
+```bash
+cd ~/nutrelia && git pull && ~/.venvs/nutrelia/bin/pip install -r requirements.txt
+```
+
+then click **Reload** on the Web tab. Your data lives in `data/nutrelia.db`, which git
+never touches, so updates keep everything you've logged.
 
 ## Tests
 
