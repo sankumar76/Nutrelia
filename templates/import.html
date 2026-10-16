@@ -1,14 +1,17 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon %}
 {% block content %}
-<form method="post" enctype="multipart/form-data" class="card narrow">
-  <h1>Add foods from MyFitnessPal</h1>
-  <ol class="steps">
-    <li>On myfitnesspal.com open <b>Reports → Printable Diary</b> and pick the dates.</li>
-    <li>Print the page and choose <b>Save as PDF</b>.</li>
-    <li>Choose the PDF here. You can pick several.</li>
-  </ol>
-  <label>Diary PDFs <input type="file" name="pdf" accept="application/pdf,.pdf" multiple required></label>
-  <p class="muted">Only new foods are added to your library. Your Nutrelia log isn't changed, and foods you already have aren't duplicated.</p>
-  <button>Add foods</button>
-</form>
+<div class="narrow">
+  <div class="page-head"><div><div class="eyebrow">Food library</div><h1>Add from MyFitnessPal</h1></div></div>
+  <form method="post" enctype="multipart/form-data" class="card">
+    <ol class="steps">
+      <li>On myfitnesspal.com open <b>Reports → Printable Diary</b> and pick the dates.</li>
+      <li>Print the page and choose <b>Save as PDF</b>.</li>
+      <li>Choose the PDF here. You can pick several.</li>
+    </ol>
+    <label>Diary PDFs <input type="file" name="pdf" accept="application/pdf,.pdf" multiple required></label>
+    <p class="muted">Only new foods are added, marked as yours. Your log isn't changed, and foods already in the library aren't duplicated.</p>
+    <button class="btn" style="width:100%">{{ icon('upload') }} Add foods</button>
+  </form>
+</div>
 {% endblock %}

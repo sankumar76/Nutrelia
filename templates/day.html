@@ -1,93 +1,69 @@
 {% extends "base.html" %}
-{% from "_macros.html" import nutrient_cells, nutrient_head with context %}
+{% from "_macros.html" import icon, kcal, dots, summary, daybar with context %}
 {% block title %}{{ d.strftime('%a, %b %-d') }} · Nutrelia{% endblock %}
 {% block content %}
-<div class="daynav">
-  <a href="{{ url_for('day_view', day=prev_day) }}" aria-label="Previous day">‹</a>
-  <form method="get" onsubmit="location.href='{{ url_for('day_view', day='') }}'+this.d.value;return false">
-    <input type="date" name="d" value="{{ day }}" onchange="this.form.onsubmit()">
-  </form>
-  <a href="{{ url_for('day_view', day=next_day) }}" aria-label="Next day">›</a>
-</div>
-<h1>{{ d.strftime('%A, %B %-d, %Y') }}</h1>
+{{ daybar(d, url_for('day_view', day=prev_day), url_for('day_view', day=next_day), url_for('day_view', day='')) }}
 
-<section class="card goals">
-  <div class="goals-head">
-    <h2>Totals vs target</h2>
-    <a href="{{ url_for('targets', back=request.path) }}">{% if targets.values()|select|list %}Edit targets{% else %}Set targets{% endif %}</a>
-  </div>
-  <div class="goal-grid">
-  {% for n, label, unit in [('calories', 'Calories', ''), ('carbs', 'Carbs', 'g'), ('fat', 'Fat', 'g'), ('protein', 'Protein', 'g'), ('fiber', 'Fiber', 'g')] %}
-    {% set t = targets[n] %}{% set a = day_totals[n] or 0 %}
-    <div class="goal">
-      <span class="goal-label">{{ label }}</span>
-      <span class="goal-target">Target {{ t|amount(unit) if t else '–' }}</span>
-      <b class="goal-actual">{{ a|amount(unit) }}</b>
-      {% if t %}
-        {% set pct = (a / t * 100) %}
-        <span class="bar"><span class="fill {% if pct > 105 %}over{% endif %}" style="width: {{ [pct, 100]|min }}%"></span></span>
-        <small class="{% if a > t %}over-text{% else %}muted{% endif %}">{% if a > t %}{{ (a - t)|amount(unit) }} over{% else %}{{ (t - a)|amount(unit) }} left{% endif %}</small>
-      {% endif %}
-    </div>
-  {% endfor %}
-  </div>
-</section>
+{{ summary(day_totals, targets, url_for('targets', back=request.path)) }}
 
 <form class="card" id="add" method="post" action="{{ url_for('match', day=day) }}">
-  <h2>Add foods</h2>
-  <div class="meal-pills" role="radiogroup" aria-label="Meal">
+  <div class="card-head"><h2>Add foods</h2></div>
+  <div class="segmented" role="radiogroup" aria-label="Meal">
     {% for m in MEALS %}
-      <label class="pill"><input type="radio" name="meal" value="{{ m }}" {% if m == default_meal %}checked{% endif %} required><span>{{ m }}</span></label>
+      <label><input type="radio" name="meal" value="{{ m }}" {% if m == default_meal %}checked{% endif %} required><span>{{ icon(m) }}{{ m }}</span></label>
     {% endfor %}
   </div>
-  <label>What did you eat? <small>One per line or comma separated. Add amounts like “10 tbsp”, “200 g”, “3” or “2 x” (two usual servings).</small>
-    <textarea name="foods" rows="4" placeholder="flax seeds 3 tbsp&#10;chapathi 2&#10;egg white&#10;tofu 200 g" required></textarea>
+  <label><span class="sr">What did you eat?</span>
+    <textarea name="foods" rows="3" placeholder="flax seeds 3 tbsp&#10;chapathi 2&#10;egg white, tofu 200 g" required></textarea>
   </label>
-  <button>Find foods</button>
+  <p class="hint" style="margin:-6px 0 14px;font-size:.82rem">One food per line or separated by commas. Add an amount like 10 tbsp, 200 g, 3, or 2 x for two usual servings.</p>
+  <button class="block">{{ icon('search') }}Find foods</button>
 </form>
 <script>
-  // No meal chosen yet: pick one from the time of day on your device.
-  (function () {
+  (function () {  // no meal chosen yet: pick one from the time of day on this device
     var form = document.getElementById('add');
     if (form.querySelector('input[name=meal]:checked')) return;
     var h = new Date().getHours();
     var meal = h < 11 ? 'Breakfast' : h < 15 ? 'Lunch' : h < 18 ? 'Snacks' : 'Dinner';
     form.querySelector('input[value="' + meal + '"]').checked = true;
   })();
+  if (location.hash === '#add') document.querySelector('#add textarea').focus();
 </script>
 
 {% for meal in MEALS %}{% set rows = by_meal[meal] %}
 <section class="card">
-  <h2>{{ meal }} <span class="meal-kcal">{{ meal_totals[meal].calories|amount }} kcal · <a href="{{ url_for('day_view', day=day, meal=meal) }}#add">+ Add</a></span></h2>
+  <div class="card-head">
+    <div class="meal-title">
+      <span class="meal-icon">{{ icon(meal) }}</span>
+      <div><h2>{{ meal }}</h2><span class="meal-kcal">{{ kcal(meal_totals[meal].calories) if rows else 0 }} <small>kcal</small></span></div>
+    </div>
+    <a class="add-link" href="{{ url_for('day_view', day=day, meal=meal) }}#add">{{ icon('plus') }}Add</a>
+  </div>
   {% if rows %}
-  <div class="scroll"><table>
-    <thead><tr><th>Food</th><th>Amount</th>{{ nutrient_head() }}<th></th></tr></thead>
-    <tbody>
+  <ul class="foods">
     {% for r in rows %}
-      <tr>
-        <td>{{ r.name }}</td>
-        <td>
-          <form method="post" action="{{ url_for('update_entry', entry_id=r.entry_id) }}" class="inline amount">
-            <input class="qty" type="number" name="amount" value="{{ r.amount|qty }}" step="any" min="0" onchange="this.form.submit()">
-            <small>{{ r.unit }}</small>
-          </form>
-        </td>
-        {{ nutrient_cells(r.scaled) }}
-        <td>
-          <form method="post" action="{{ url_for('update_entry', entry_id=r.entry_id) }}" class="inline">
-            <button name="delete" value="1" class="link" aria-label="Remove" title="Remove">✕</button>
-          </form>
-        </td>
-      </tr>
+    <li class="food">
+      <span class="name">{{ r.name }}</span>
+      <span class="kcal">{{ kcal(r.scaled.calories) }} <small>kcal</small></span>
+      <form method="post" action="{{ url_for('update_entry', entry_id=r.entry_id) }}" class="inline">
+        <button name="delete" value="1" class="icon" aria-label="Remove {{ r.name }}" title="Remove">{{ icon('x') }}</button>
+      </form>
+      <div class="meta">
+        <form method="post" action="{{ url_for('update_entry', entry_id=r.entry_id) }}" class="amount-edit">
+          <input type="number" name="amount" value="{{ r.amount|qty }}" step="any" min="0" inputmode="decimal" onchange="this.form.submit()" aria-label="Amount of {{ r.name }}">
+          <span>{{ r.unit }}</span>
+        </form>
+        {{ dots(r.scaled) }}
+      </div>
+    </li>
     {% endfor %}
-    </tbody>
-  </table></div>
-  {% else %}<p class="muted">Nothing logged.</p>{% endif %}
+  </ul>
+  {% else %}<p class="empty">Nothing logged yet.</p>{% endif %}
 </section>
 {% endfor %}
 
 <details class="card">
-  <summary>Copy another day's foods into this day</summary>
+  <summary>{{ icon('copy') }}Copy another day into this one</summary>
   <form method="post" action="{{ url_for('copy_day', day=day) }}" class="row">
     <input type="date" name="from" value="{{ prev_day }}" required>
     <button>Copy</button>

@@ -131,13 +131,13 @@ def test_app_flow(tmp_path, monkeypatch):
     c.post("/login", data={"username": "santhosh", "password": "pw1234"})
     assert b"Sambar" in c.get("/day/2025-10-01").data  # admin owns the imported history
     r = c.post("/day/2026-01-05/match", data={"meal": "Dinner", "foods": "sambar"})
-    assert r.status_code == 200 and b"pick one" in r.data
+    assert r.status_code == 200 and b"options" in r.data
     import re
     food_id = re.search(rb'name="food_0" value="(\d+)" checked', r.data).group(1).decode()
     r = c.post("/day/2026-01-05/add", data={"meal": "Dinner", "count": "1", "food_0": food_id, f"amount_0_{food_id}": "500"})
     assert r.status_code == 302
     page = c.get("/day/2026-01-05").data
-    assert b"256 kcal" in page  # 500 g of sambar at 128 kcal per 250 g
+    assert b"256 <small>kcal" in page  # 500 g of sambar at 128 kcal per 250 g
 
 
 def test_split_lines_keeps_serving_with_name():
@@ -234,3 +234,41 @@ def test_people_have_separate_logs(tmp_path, monkeypatch):
     assert priya.get("/people").status_code == 403
     entry = app_module.db.connect().execute("SELECT id FROM log_entries LIMIT 1").fetchone()[0]
     assert priya.post(f"/entry/{entry}/update", data={"delete": "1"}).status_code == 404
+
+
+def test_original_foods_rank_before_mine_before_others(conn):
+    me = db.create_user(conn, "Me", "me", "pw1234")
+    other = db.create_user(conn, "Other", "other", "pw1234")
+    n = {"calories": 100, "carbs": 1, "fat": 1, "protein": 1}
+    db.upsert_food(conn, "Egg white", "100 g", n, source="manual", created_by=other)
+    db.upsert_food(conn, "Egg white", "1 cup", n, source="manual", created_by=me)
+    opts = matching.match_line(conn, "egg white", user_id=me).options
+    assert [o["tier"] for o in opts] == [0, 1, 2]
+    assert [o["created_by"] for o in opts] == [None, me, other]
+
+
+def test_sharing_a_diary(tmp_path, monkeypatch):
+    monkeypatch.setenv("NUTRELIA_DB", str(tmp_path / "app.db"))
+    monkeypatch.setenv("NUTRELIA_PASSWORD", "pw1234")
+    import importlib
+    import app as app_module
+    importlib.reload(app_module)
+    admin = app_module.app.test_client()
+    admin.post("/login", data={"username": "santhosh", "password": "pw1234"})
+    admin.post("/people", data={"action": "add", "name": "Priya", "username": "priya", "password": "pw5678"})
+    priya = app_module.app.test_client()
+    priya.post("/login", data={"username": "priya", "password": "pw5678"})
+    conn = app_module.db.connect()
+    sid = conn.execute("SELECT id FROM users WHERE username='santhosh'").fetchone()[0]
+    pid = conn.execute("SELECT id FROM users WHERE username='priya'").fetchone()[0]
+    assert priya.get(f"/friends/{sid}/day/2025-10-01").status_code == 404  # not shared yet
+    admin.post("/friends", data={"viewer": [str(pid)]})
+    assert b"Santhosh" in priya.get("/friends").data
+    assert b"Sambar" in priya.get(f"/friends/{sid}/day/2025-10-01").data
+    assert admin.get(f"/friends/{pid}/day/2025-10-01").status_code == 404  # sharing is one way
+    meal = conn.execute("SELECT meal FROM log_entries WHERE user_id=? AND day='2025-10-01' LIMIT 1", (sid,)).fetchone()[0]
+    r = priya.post(f"/friends/{sid}/day/2025-10-01/copy", data={"meal": meal, "to": "2026-02-01"})
+    assert r.status_code == 302
+    assert conn.execute("SELECT COUNT(*) FROM log_entries WHERE user_id=? AND day='2026-02-01'", (pid,)).fetchone()[0] > 0
+    admin.post("/friends", data={})  # stop sharing
+    assert priya.get(f"/friends/{sid}/day/2025-10-01").status_code == 404

@@ -1,10 +1,14 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon %}
 {% block content %}
-<form method="post" class="card narrow">
-  <h1>Nutrelia</h1>
-  <p class="muted">Understand your food. Nourish your future.</p>
-  <label>Username <input name="username" autocomplete="username" autocapitalize="none" autofocus required></label>
-  <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
-  <button>Sign in</button>
-</form>
+<div class="auth">
+  <form method="post" class="card">
+    <span class="logo">{{ icon('leaf') }}</span>
+    <h1>Welcome to Nutrelia</h1>
+    <p class="muted">Understand your food. Nourish your future.</p>
+    <label>Username <input name="username" autocomplete="username" autocapitalize="none" autofocus required></label>
+    <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="btn" style="width:100%">Sign in</button>
+  </form>
+</div>
 {% endblock %}

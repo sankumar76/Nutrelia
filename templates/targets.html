@@ -1,14 +1,16 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon %}
 {% block content %}
-<form method="post" class="card narrow">
-  <h1>Daily targets</h1>
-  <p class="muted">These show above each day's totals. Change them whenever you like; leave a box blank for no target.</p>
-  <input type="hidden" name="back" value="{{ back }}">
-  <div class="grid">
-  {% for n, label in [('calories', 'Calories (kcal)'), ('carbs', 'Carbs (g)'), ('fat', 'Fat (g)'), ('protein', 'Protein (g)'), ('fiber', 'Fiber (g)')] %}
-    <label>{{ label }} <input type="number" step="any" min="0" name="{{ n }}" value="{{ targets[n]|amount if targets[n] else '' }}" inputmode="decimal"></label>
-  {% endfor %}
-  </div>
-  <button>Save targets</button>
-</form>
+<div class="narrow">
+  <div class="page-head"><div><div class="eyebrow">Your goals</div><h1>Daily targets</h1></div></div>
+  <form method="post" class="card">
+    <p class="muted" style="margin-top:0">These show on every day. Change them whenever you like; leave a box blank for no target.</p>
+    <input type="hidden" name="back" value="{{ back }}">
+    {% for n, label, unit in [('calories', 'Calories', 'kcal'), ('carbs', 'Carbs', 'g'), ('fat', 'Fat', 'g'), ('protein', 'Protein', 'g'), ('fiber', 'Fiber', 'g')] %}
+      <label class="target-row macro {{ n }}"><span><i class="swatch"></i>{{ label }} <small>{{ unit }}</small></span>
+        <input type="number" step="any" min="0" name="{{ n }}" value="{{ targets[n]|amount if targets[n] else '' }}" inputmode="decimal"></label>
+    {% endfor %}
+    <button class="btn" style="width:100%">{{ icon('check') }} Save targets</button>
+  </form>
+</div>
 {% endblock %}

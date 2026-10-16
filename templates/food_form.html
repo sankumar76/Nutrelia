@@ -1,23 +1,28 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon %}
 {% block content %}
-<form method="post" class="card narrow">
-  <h1>New food</h1>
-  <label>Name <input name="name" value="{{ form.get('name', '') }}" required></label>
-  <label>Nutrition below is for <small>e.g. 100 g, 1 cup, 2 slice</small>
-    <input name="serving" value="{{ form.get('serving', '') }}" placeholder="100 g" required></label>
-  <div class="grid">
-  {% for n in NUTRIENTS %}
-    <label>{{ n|capitalize }}{% if UNITS[n] %} ({{ UNITS[n] }}){% endif %}
-      <input type="number" step="any" min="0" name="{{ n }}" value="{{ form.get(n, '') }}" {% if n == 'calories' %}required{% endif %}></label>
-  {% endfor %}
-  </div>
-  {% if form.get('day') %}
-    <input type="hidden" name="day" value="{{ form.get('day') }}">
-    <label>Add to {{ form.get('day') }}
-      <select name="meal">{% for m in MEALS %}<option {% if m == form.get('meal') %}selected{% endif %}>{{ m }}</option>{% endfor %}</select></label>
-    <label>How much you ate <small>blank = the amount above</small>
-      <input name="eaten" value="{{ form.get('eaten', '') }}" placeholder="e.g. 150 g"></label>
-  {% endif %}
-  <button>Save</button>
-</form>
+<div class="narrow">
+  <div class="page-head"><div><div class="eyebrow">Food library</div><h1>New food</h1></div></div>
+  <form method="post" class="card">
+    <label>Name <input name="name" value="{{ form.get('name', '') }}" required></label>
+    <label>Nutrition below is for <small>e.g. 100 g, 1 cup, 2 slice</small>
+      <input name="serving" value="{{ form.get('serving', '') }}" placeholder="100 g" required></label>
+    <div class="grid">
+    {% for n in NUTRIENTS %}
+      <label>{{ n|capitalize }}{% if UNITS[n] %} <small>{{ UNITS[n] }}</small>{% endif %}
+        <input type="number" step="any" min="0" name="{{ n }}" value="{{ form.get(n, '') }}" inputmode="decimal" {% if n == 'calories' %}required{% endif %}></label>
+    {% endfor %}
+    </div>
+    {% if form.get('day') %}
+      <input type="hidden" name="day" value="{{ form.get('day') }}">
+      <div class="grid">
+        <label>Add to {{ form.get('day') }}
+          <select name="meal">{% for m in MEALS %}<option {% if m == form.get('meal') %}selected{% endif %}>{{ m }}</option>{% endfor %}</select></label>
+        <label>How much you ate <small>blank = the amount above</small>
+          <input name="eaten" value="{{ form.get('eaten', '') }}" placeholder="e.g. 150 g"></label>
+      </div>
+    {% endif %}
+    <div class="row"><button class="btn">{{ icon('check') }} Save</button><a class="btn ghost" href="{{ url_for('foods') }}">Cancel</a></div>
+  </form>
+</div>
 {% endblock %}

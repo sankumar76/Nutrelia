@@ -1,15 +1,21 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon %}
 {% block content %}
-<section class="card narrow">
-  <h1>{{ user.name }}</h1>
-  <p class="muted">Signed in as <b>{{ user.username }}</b>{% if user.is_admin %} (admin){% endif %}.</p>
-  <form method="post">
-    <h2>Change password</h2>
+<div class="narrow">
+  <div class="page-head"><div><div class="eyebrow">Your account</div><h1>{{ user.name }}</h1></div></div>
+  <section class="card">
+    <div class="list"><div class="item">
+      <span class="avatar">{{ user.name[:1]|upper }}</span>
+      <div class="grow"><b>{{ user.name }}</b><small>Signed in as {{ user.username }}{% if user.is_admin %} · admin{% endif %}</small></div>
+      <a class="btn outline" href="{{ url_for('logout') }}">Log out</a>
+    </div></div>
+  </section>
+  <form method="post" class="card">
+    <div class="card-head"><h2>Change password</h2></div>
     <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
     <label>New password <input type="password" name="new" autocomplete="new-password" minlength="6" required></label>
     <label>New password again <input type="password" name="again" autocomplete="new-password" minlength="6" required></label>
-    <button>Change password</button>
+    <button class="btn">Change password</button>
   </form>
-  <p><a class="button secondary" href="{{ url_for('logout') }}">Log out</a></p>
-</section>
+</div>
 {% endblock %}

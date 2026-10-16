@@ -1,11 +1,68 @@
-{% macro nutrient_cells(values) -%}
-  {% for n in NUTRIENTS %}<td class="num n-{{ n }}">{{ values[n]|amount(UNITS[n]) }}</td>{% endfor %}
+{% macro icon(name) -%}<svg class="i" aria-hidden="true"><use href="#i-{{ name }}"/></svg>{%- endmacro %}
+
+{% macro kcal(v) -%}{{ v|round|int if v is not none else '–' }}{%- endmacro %}
+
+{% macro dots(f) -%}
+  <span class="dots">
+    <span class="c" title="Carbs">{{ f.carbs|amount('g') }}</span>
+    <span class="f" title="Fat">{{ f.fat|amount('g') }}</span>
+    <span class="p" title="Protein">{{ f.protein|amount('g') }}</span>
+    {% if f.fiber is not none %}<span class="fi" title="Fiber">{{ f.fiber|amount('g') }}</span>{% endif %}
+  </span>
 {%- endmacro %}
-{% macro nutrient_head() -%}
-  <th class="num">Cal</th><th class="num">Carbs</th><th class="num">Fat</th><th class="num">Protein</th>
-  <th class="num n-cholesterol">Chol</th><th class="num n-sodium">Sodium</th><th class="num n-sugar">Sugar</th><th class="num n-fiber">Fiber</th>
+
+{% macro origin(f, me) -%}
+  {% if f.created_by is none and f.source == 'mfp' %}<span class="chip gray">Original</span>
+  {% elif f.created_by == me %}<span class="chip mine">Mine</span>
+  {% elif f.creator_name %}<span class="chip warn">{{ f.creator_name }}</span>
+  {% endif %}
 {%- endmacro %}
-{% macro food_summary(f) -%}{# f: dict of nutrient totals #}
-  <span class="kcal">{{ f.calories|round|int if f.calories is not none else "–" }} kcal</span>
-  <span class="macros">C {{ f.carbs|amount('g') }} · F {{ f.fat|amount('g') }} · P {{ f.protein|amount('g') }}{% if f.fiber is not none %} · Fiber {{ f.fiber|amount('g') }}{% endif %}</span>
+
+{# The day's summary: a calorie ring and target bars. targets may be empty (a friend's day). #}
+{% macro summary(totals, targets, edit_link=None) -%}
+  {% set cal = totals.calories or 0 %}{% set goal = targets.calories if targets else None %}
+  {% set pct = (cal / goal) if goal else 0 %}
+  {% set C = 326.73 %}
+  <section class="card">
+    <div class="summary">
+      <div class="ring {{ 'over' if goal and cal > goal }}">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="track" cx="60" cy="60" r="52"/>
+          <circle class="fill" cx="60" cy="60" r="52" stroke-dasharray="{{ C }}" stroke-dashoffset="{{ C * (1 - ([pct, 1]|min)) if goal else C }}"/>
+        </svg>
+        <div class="center">
+          <b>{{ kcal(cal) }}</b>
+          <small>{% if goal %}of {{ goal|amount }} kcal{% else %}kcal eaten{% endif %}</small>
+          {% if goal %}<em>{% if cal > goal %}{{ (cal - goal)|round|int }} over{% else %}{{ (goal - cal)|round|int }} left{% endif %}</em>{% endif %}
+        </div>
+      </div>
+      <div class="macros">
+        {% for n, label in [('carbs', 'Carbs'), ('fat', 'Fat'), ('protein', 'Protein'), ('fiber', 'Fiber')] %}
+          {% set a = totals[n] or 0 %}{% set t = targets[n] if targets else None %}
+          <div class="macro {{ n }} {{ 'over' if t and a > t * 1.05 }}">
+            <div class="top"><b>{{ label }}</b><span><strong>{{ a|amount }}</strong>{% if t %} / {{ t|amount }}{% endif %} g</span></div>
+            <div class="bar"><i style="width: {{ ([a / t * 100, 100]|min) if t else 0 }}%"></i></div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% if edit_link %}
+    <div class="summary-foot">
+      <span class="muted">{% if targets and targets.values()|select|list %}Your daily targets{% else %}No targets set yet{% endif %}</span>
+      <a href="{{ edit_link }}">{% if targets and targets.values()|select|list %}Edit targets{% else %}Set targets{% endif %}</a>
+    </div>
+    {% endif %}
+  </section>
+{%- endmacro %}
+
+{% macro daybar(d, prev_url, next_url, picker_base) -%}
+  <div class="daybar">
+    <a class="step" href="{{ prev_url }}" aria-label="Previous day">{{ icon('left') }}</a>
+    <label class="when">
+      <b>{{ d.strftime('%A') }}</b>
+      <small>{{ d.strftime('%B %-d, %Y') }}</small>
+      <input type="date" value="{{ d.isoformat() }}" aria-label="Pick a date" onchange="if (this.value) location.href='{{ picker_base }}' + this.value">
+    </label>
+    <a class="step" href="{{ next_url }}" aria-label="Next day">{{ icon('right') }}</a>
+  </div>
 {%- endmacro %}

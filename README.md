@@ -21,10 +21,16 @@ signs in with their own username and password and has their own log and targets,
 everyone shares the food library. Foods can be changed by the person who added them or
 the admin.
 
-Each line is matched against your own food history. When a food has more than one
+Each line is matched against the food library. When a food has more than one
 version (for example *Sambar, 250 g* and *Sambar, 1 cup*), Nutrelia asks which one
-you mean, with the one you've logged most often preselected. Foods it has never seen
-can be added by hand.
+you mean. Options are listed in this order: the original foods from the first MFP import,
+then foods you added, then foods other people added (each marked *Original*, *Mine* or
+the person's name); within each group the closest name and most-logged food come first.
+Foods it has never seen can be added by hand.
+
+On **Friends** you choose who can see your diary. People you share with see what you
+ate each day (not your targets) and can copy a whole meal into their own day. Sharing
+is one way: they only see yours, and you see theirs only if they share back.
 
 ## What's inside
 

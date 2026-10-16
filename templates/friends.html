@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon with context %}
+{% block title %}Friends · Nutrelia{% endblock %}
+{% block content %}
+<div class="page-head"><div><span class="eyebrow">Get inspired</span><h1>Friends</h1></div></div>
+
+<section class="card">
+  <div class="card-head"><h2>Friends' diaries</h2></div>
+  {% if friends %}
+  <ul class="list">
+    {% for f in friends %}
+    <li><a class="item" href="{{ url_for('friend_day', friend_id=f.id, day='today') }}">
+      <span class="avatar">{{ f.name[:1]|upper }}</span>
+      <span class="grow"><b>{{ f.name }}</b><small>{% if f.last_day %}Last logged {{ f.last_day }}{% else %}Nothing logged yet{% endif %}</small></span>
+      {{ icon('right') }}
+    </a></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="empty">Nobody has shared their diary with you yet.</p>{% endif %}
+</section>
+
+<form method="post" class="card">
+  <div class="card-head"><h2>Share my diary with</h2></div>
+  <p class="muted" style="margin-top:-6px">They'll see what you eat each day and can copy meals into their own diary. Your targets stay private.</p>
+  {% for o in others %}
+    <label class="toggle-row">
+      <span class="avatar">{{ o.name[:1]|upper }}</span>
+      <span class="grow">{{ o.name }} <small class="muted">{{ o.username }}</small></span>
+      <input class="switch" type="checkbox" name="viewer" value="{{ o.id }}" {% if o.id in sharing %}checked{% endif %}>
+    </label>
+  {% else %}
+    <p class="empty">There's nobody else on Nutrelia yet.</p>
+  {% endfor %}
+  {% if others %}<button class="block" style="margin-top:12px">Save sharing</button>{% endif %}
+</form>
+{% endblock %}

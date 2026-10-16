@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, kcal, dots, summary, daybar with context %}
+{% block title %}{{ friend.name }} · Nutrelia{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div class="meal-title"><span class="avatar">{{ friend.name[:1]|upper }}</span><div><span class="eyebrow">Friend's diary</span><h1 style="margin:0">{{ friend.name }}</h1></div></div>
+  <a href="{{ url_for('friends') }}">All friends</a>
+</div>
+{{ daybar(d, url_for('friend_day', friend_id=friend.id, day=prev_day), url_for('friend_day', friend_id=friend.id, day=next_day), url_for('friend_day', friend_id=friend.id, day='')) }}
+
+{{ summary(day_totals, None) }}
+
+{% for meal in MEALS %}{% set rows = by_meal[meal] %}{% if rows %}
+<section class="card">
+  <div class="card-head">
+    <div class="meal-title">
+      <span class="meal-icon">{{ icon(meal) }}</span>
+      <div><h2>{{ meal }}</h2><span class="meal-kcal">{{ kcal(meal_totals[meal].calories) }} <small>kcal</small></span></div>
+    </div>
+    <form method="post" action="{{ url_for('copy_from_friend', friend_id=friend.id, day=day) }}" class="copy-form">
+      <input type="hidden" name="meal" value="{{ meal }}"><input type="hidden" name="to" class="to-today">
+      <button class="add-link" style="border:0;box-shadow:none;color:var(--accent)">{{ icon('copy') }}Copy to my day</button>
+    </form>
+  </div>
+  <ul class="foods">
+    {% for r in rows %}
+    <li class="food" style="grid-template-columns:1fr auto">
+      <span class="name">{{ r.name }}</span>
+      <span class="kcal">{{ kcal(r.scaled.calories) }} <small>kcal</small></span>
+      <div class="meta"><span>{{ r.amount|qty }} {{ r.unit }}</span>{{ dots(r.scaled) }}</div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}{% endfor %}
+{% if not by_meal.values()|select|list %}<section class="card"><p class="empty">{{ friend.name }} hasn't logged anything on this day.</p></section>{% endif %}
+<script>
+  // copies land on today's date in your own time zone
+  var d = new Date(), p = function (n) { return String(n).padStart(2, '0'); };
+  var today = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  document.querySelectorAll('.to-today').forEach(function (el) { el.value = today; });
+</script>
+{% endblock %}

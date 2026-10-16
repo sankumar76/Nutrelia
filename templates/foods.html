@@ -1,20 +1,28 @@
 {% extends "base.html" %}
-{% from "_macros.html" import nutrient_cells, nutrient_head with context %}
+{% from "_macros.html" import icon, kcal, dots, origin with context %}
+{% block title %}Foods · Nutrelia{% endblock %}
 {% block content %}
-<h1>Your foods <small class="muted">{{ rows|length }}</small></h1>
-<form method="get" class="row">
-  <input type="search" name="q" value="{{ q }}" placeholder="Search foods">
-  <button>Search</button>
-</form>
-<div class="row actions">
-  <a class="button" href="{{ url_for('new_food') }}">+ New food</a>
-  <a class="button secondary" href="{{ url_for('import_foods') }}">Add from MyFitnessPal PDF</a>
+<div class="page-head">
+  <div><span class="eyebrow">Shared library</span><h1>Foods <span class="muted" style="font-weight:500">{{ rows|length }}</span></h1></div>
 </div>
-<p class="muted">Tap a food to edit it.</p>
-<div class="card scroll"><table>
-  <thead><tr><th>Food</th><th>Serving</th>{{ nutrient_head() }}<th class="num">Logged</th></tr></thead>
-  <tbody>{% for r in rows %}
-    <tr><td><a href="{{ url_for('edit_food', food_id=r.id) }}">{{ r.name }}</a></td><td>{{ r.base_amount|amount }} {{ r.unit }}</td>{{ nutrient_cells(r) }}<td class="num">{{ r.times_logged }}</td></tr>
-  {% endfor %}</tbody>
-</table></div>
+<div class="actions">
+  <a class="btn" href="{{ url_for('new_food') }}">{{ icon('plus') }}New food</a>
+  <a class="btn outline" href="{{ url_for('import_foods') }}">{{ icon('upload') }}Add from MyFitnessPal</a>
+</div>
+<section class="card">
+  <form method="get" class="search" role="search">
+    {{ icon('search') }}
+    <input type="search" name="q" value="{{ q }}" placeholder="Search foods" aria-label="Search foods" onchange="this.form.submit()">
+  </form>
+  {% if rows %}
+  <ul class="list">
+    {% for r in rows %}
+    <li><a class="item" href="{{ url_for('edit_food', food_id=r.id) }}">
+      <span class="grow"><b>{{ r.name }} {{ origin(r, user.id) }}</b><small>per {{ r.base_amount|qty }} {{ r.unit }} · {{ dots(r) }}</small></span>
+      <span class="right">{{ kcal(r.calories) }}<small>kcal</small></span>
+    </a></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="empty">No foods match “{{ q }}”.</p>{% endif %}
+</section>
 {% endblock %}

@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
-<p class="muted">Opening today… <a id="go" href="{{ url_for('day_view', day='today') }}">Continue</a></p>
+<p class="muted">Opening today… <a href="{{ url_for('friend_day', friend_id=friend.id, day='') if friend else url_for('day_view', day='') }}">Continue</a></p>
 <script>
   var d = new Date(), p = function (n) { return String(n).padStart(2, '0'); };
   var day = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
-  location.replace('{{ url_for('day_view', day='') }}' + day);
+  location.replace('{{ url_for('friend_day', friend_id=friend.id, day='') if friend else url_for('day_view', day='') }}' + day);
 </script>
 {% endblock %}

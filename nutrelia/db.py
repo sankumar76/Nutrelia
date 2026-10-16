@@ -45,6 +45,11 @@ CREATE TABLE IF NOT EXISTS users (
     is_admin INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS shares (
+    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    viewer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (owner_id, viewer_id)
+);
 CREATE TABLE IF NOT EXISTS user_targets (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     nutrient TEXT NOT NULL,
@@ -83,6 +88,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute("CREATE INDEX IF NOT EXISTS log_user_day ON log_entries (user_id, day)")
         if "created_by" not in _columns(conn, "foods"):
             conn.execute("ALTER TABLE foods ADD COLUMN created_by INTEGER REFERENCES users(id)")
+        # foods typed in before accounts existed belong to the first admin
+        conn.execute("""UPDATE foods SET created_by = (SELECT MIN(id) FROM users WHERE is_admin = 1)
+                        WHERE source = 'manual' AND created_by IS NULL""")
 
 
 def scale(food, amount: float) -> dict:
@@ -248,6 +256,7 @@ def delete_user(conn: sqlite3.Connection, user_id: int) -> None:
     with conn:
         conn.execute("DELETE FROM log_entries WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM user_targets WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM shares WHERE owner_id = ? OR viewer_id = ?", (user_id, user_id))
         conn.execute("UPDATE foods SET created_by = NULL WHERE created_by = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         refresh_usage(conn)
@@ -271,12 +280,42 @@ def delete_food(conn: sqlite3.Connection, food_id: int) -> bool:
     return True
 
 
-def add_foods_only(conn: sqlite3.Connection, entries: list[DiaryEntry]) -> dict:
+def add_foods_only(conn: sqlite3.Connection, entries: list[DiaryEntry], user_id: int | None = None) -> dict:
     """Add the foods from diary rows to the library without touching the daily log."""
     before = conn.execute("SELECT COUNT(*) FROM foods").fetchone()[0]
     freq = Counter((e.name, e.serving, tuple(e.nutrients().values())) for e in entries)
     with conn:
         for (name, serving, values), _n in freq.most_common():
-            upsert_food(conn, name, serving, dict(zip(NUTRIENTS, values)))
+            upsert_food(conn, name, serving, dict(zip(NUTRIENTS, values)), source="upload", created_by=user_id)
     after = conn.execute("SELECT COUNT(*) FROM foods").fetchone()[0]
     return {"rows": len(entries), "new_foods": after - before, "total_foods": after}
+
+
+# --- sharing ---------------------------------------------------------------
+
+def shared_with(conn: sqlite3.Connection, owner_id: int) -> set[int]:
+    """Who may see this person's diary."""
+    return {r[0] for r in conn.execute("SELECT viewer_id FROM shares WHERE owner_id = ?", (owner_id,))}
+
+
+def set_shared_with(conn: sqlite3.Connection, owner_id: int, viewer_ids: set[int]) -> None:
+    with conn:
+        conn.execute("DELETE FROM shares WHERE owner_id = ?", (owner_id,))
+        conn.executemany("INSERT INTO shares (owner_id, viewer_id) VALUES (?, ?)",
+                         [(owner_id, v) for v in viewer_ids if v != owner_id])
+
+
+def can_view(conn: sqlite3.Connection, viewer_id: int, owner_id: int) -> bool:
+    return viewer_id == owner_id or conn.execute(
+        "SELECT 1 FROM shares WHERE owner_id = ? AND viewer_id = ?", (owner_id, viewer_id)).fetchone() is not None
+
+
+def friends_sharing_with(conn: sqlite3.Connection, viewer_id: int) -> list[sqlite3.Row]:
+    """People whose diaries this person can see, with when they last logged."""
+    return conn.execute(
+        """SELECT u.id, u.name, u.username,
+                  (SELECT MAX(day) FROM log_entries l WHERE l.user_id = u.id) AS last_day
+           FROM shares s JOIN users u ON u.id = s.owner_id
+           WHERE s.viewer_id = ? ORDER BY u.name COLLATE NOCASE""",
+        (viewer_id,),
+    ).fetchall()

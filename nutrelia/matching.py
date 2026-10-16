@@ -107,9 +107,19 @@ def _score(query: str, food) -> float:
     return max(fuzz.WRatio(q, name), fuzz.WRatio(q, short))
 
 
-def _option(food, req: Request, score: float) -> dict:
+def food_tier(food, user_id: int | None) -> int:
+    """0: the original MFP library, 1: foods you added, 2: foods other people added."""
+    if food["created_by"] is None and food["source"] == "mfp":
+        return 0
+    if user_id is not None and food["created_by"] == user_id:
+        return 1
+    return 2
+
+
+def _option(food, req: Request, score: float, user_id: int | None) -> dict:
     amount, unit_fits = amount_for(food, req)
     return dict(food) | {
+        "tier": food_tier(food, user_id),
         "score": round(min(score, 100)),
         "amount": round(amount, 2),
         "unit_fits": unit_fits,
@@ -118,7 +128,7 @@ def _option(food, req: Request, score: float) -> dict:
     }
 
 
-def match_line(conn: sqlite3.Connection, line: str, foods: list | None = None) -> LineMatch:
+def match_line(conn: sqlite3.Connection, line: str, foods: list | None = None, user_id: int | None = None) -> LineMatch:
     req = parse_request(line)
     foods = foods if foods is not None else conn.execute("SELECT * FROM foods").fetchall()
     scored = [(s, f) for f in foods if (s := _score(req.query, f)) >= MIN_SCORE]
@@ -132,9 +142,10 @@ def match_line(conn: sqlite3.Connection, line: str, foods: list | None = None) -
         return result
     top = max(s for s, _ in scored)
     keep = [(s, f) for s, f in scored if s >= max(MIN_SCORE, top - 8)]
-    opts = [_option(f, req, s) for s, f in keep]
-    # best name first; foods whose unit fits what was typed before those that don't; then most logged
-    opts.sort(key=lambda o: (-o["score"], not o["unit_fits"], -(o["times_logged"] or 0)))
+    opts = [_option(f, req, s, user_id) for s, f in keep]
+    # original foods first, then yours, then other people's; within each, best name, a unit that
+    # fits what was typed, and most logged
+    opts.sort(key=lambda o: (o["tier"], -o["score"], not o["unit_fits"], -(o["times_logged"] or 0)))
     result.options = opts[:12]
     if top < WEAK_SCORE:
         result.status = "weak"
@@ -145,6 +156,8 @@ def match_line(conn: sqlite3.Connection, line: str, foods: list | None = None) -
     return result
 
 
-def match_text(conn: sqlite3.Connection, text: str) -> list[LineMatch]:
-    foods = conn.execute("SELECT * FROM foods").fetchall()
-    return [match_line(conn, line, foods) for line in split_lines(text)]
+def match_text(conn: sqlite3.Connection, text: str, user_id: int | None = None) -> list[LineMatch]:
+    foods = conn.execute(
+        "SELECT f.*, u.name AS creator_name FROM foods f LEFT JOIN users u ON u.id = f.created_by"
+    ).fetchall()
+    return [match_line(conn, line, foods, user_id) for line in split_lines(text)]

@@ -159,16 +159,22 @@ def index():
 @login_required
 def day_view(day):
     day = parse_day(day)
-    rows = [dict(r) for r in db.day_entries(get_db(), g.user["id"], day)]
+    return render_template(
+        "day.html", **build_day(g.user["id"], day), targets=db.get_targets(get_db(), g.user["id"]),
+        default_meal=request.args.get("meal", ""),
+    )
+
+
+def build_day(user_id: int, day: str) -> dict:
+    """Everything a day page shows: entries by meal with their nutrition, and totals."""
+    rows = [dict(r) for r in db.day_entries(get_db(), user_id, day)]
     for r in rows:
         r["scaled"] = db.scale(r, r["amount"])
     by_meal = {m: [r for r in rows if r["meal"] == m] for m in db.MEAL_ORDER}
     d = date.fromisoformat(day)
-    return render_template(
-        "day.html", day=day, d=d, by_meal=by_meal, day_totals=totals(rows), targets=db.get_targets(get_db(), g.user["id"]),
-        meal_totals={m: totals(v) for m, v in by_meal.items()},
+    return dict(
+        day=day, d=d, by_meal=by_meal, day_totals=totals(rows), meal_totals={m: totals(v) for m, v in by_meal.items()},
         prev_day=(d - timedelta(days=1)).isoformat(), next_day=(d + timedelta(days=1)).isoformat(),
-        default_meal=request.args.get("meal", ""),
     )
 
 
@@ -178,7 +184,7 @@ def match(day):
     day = parse_day(day)
     meal = request.form.get("meal", "Breakfast")
     text = request.form.get("foods", "")
-    lines = matching.match_text(get_db(), text)
+    lines = matching.match_text(get_db(), text, g.user["id"])
     if not lines:
         flash("Type at least one food.")
         return redirect(url_for("day_view", day=day))
@@ -321,13 +327,60 @@ def import_foods():
                 except Exception:  # noqa: BLE001 - report any unreadable file to the user
                     flash(f"Couldn't read {f.filename}. Is it a MyFitnessPal Printable Diary PDF?")
         if entries:
-            stats = db.add_foods_only(get_db(), entries)
+            stats = db.add_foods_only(get_db(), entries, g.user["id"])
             flash(f"Read {stats['rows']} food rows: {stats['new_foods']} new foods added "
                   f"({stats['total_foods']} foods in total).")
         elif files:
             flash("No foods found in that file.")
         return redirect(url_for("foods"))
     return render_template("import.html")
+
+
+@app.route("/friends", methods=["GET", "POST"])
+@login_required
+def friends():
+    conn = get_db()
+    if request.method == "POST":
+        chosen = {int(v) for v in request.form.getlist("viewer") if v.isdigit()}
+        db.set_shared_with(conn, g.user["id"], chosen)
+        flash("Sharing updated." if chosen else "Your diary is now private.")
+        return redirect(url_for("friends"))
+    others = conn.execute("SELECT id, name, username FROM users WHERE id != ? ORDER BY name COLLATE NOCASE",
+                          (g.user["id"],)).fetchall()
+    return render_template("friends.html", others=others, sharing=db.shared_with(conn, g.user["id"]),
+                           friends=db.friends_sharing_with(conn, g.user["id"]))
+
+
+def friend_or_404(friend_id: int):
+    conn = get_db()
+    friend = conn.execute("SELECT id, name, username FROM users WHERE id = ?", (friend_id,)).fetchone()
+    if not friend or friend_id == g.user["id"] or not db.can_view(conn, g.user["id"], friend_id):
+        abort(404)
+    return friend
+
+
+@app.route("/friends/<int:friend_id>/day/<day>")
+@login_required
+def friend_day(friend_id, day):
+    friend = friend_or_404(friend_id)
+    if day == "today":
+        return render_template("today.html", friend=friend)
+    return render_template("friend_day.html", friend=friend, **build_day(friend_id, parse_day(day)))
+
+
+@app.post("/friends/<int:friend_id>/day/<day>/copy")
+@login_required
+def copy_from_friend(friend_id, day):
+    friend = friend_or_404(friend_id)
+    day = parse_day(day)
+    meal = request.form.get("meal", "")
+    to_day = parse_day(request.form.get("to", "") or day)
+    conn = get_db()
+    rows = [r for r in db.day_entries(conn, friend_id, day) if not meal or r["meal"] == meal]
+    for r in rows:
+        db.add_entry(conn, g.user["id"], to_day, r["meal"], r["food_id"], r["amount"])
+    flash(f"Copied {len(rows)} food{'s' if len(rows) != 1 else ''} from {friend['name']} into your day.")
+    return redirect(url_for("day_view", day=to_day))
 
 
 @app.route("/account", methods=["GET", "POST"])

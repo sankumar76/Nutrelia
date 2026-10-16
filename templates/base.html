@@ -2,27 +2,58 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="Nutrelia: Understand your food. Nourish your future.">
+  <meta name="theme-color" content="#0f8a5f">
   <title>{% block title %}Nutrelia{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <header class="top">
-    <a class="brand" href="{{ url_for('index') }}">Nutrelia<span class="tagline">Understand your food. Nourish your future.</span></a>
-    <nav>
-      {% if user %}
-      <a href="{{ url_for('index') }}">Today</a>
-      <a href="{{ url_for('foods') }}">Foods</a>
-      <a href="{{ url_for('targets') }}">Targets</a>
-      {% if user.is_admin %}<a href="{{ url_for('people') }}">People</a>{% endif %}
-      <a href="{{ url_for('account') }}" class="me" title="Account">{{ user.name }}</a>
-      {% endif %}
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></symbol>
+    <symbol id="i-today" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+    <symbol id="i-foods" viewBox="0 0 24 24"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+    <symbol id="i-friends" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-people" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-Breakfast" viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><path d="M6 2v2M10 2v2M14 2v2"/></symbol>
+    <symbol id="i-Lunch" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+    <symbol id="i-Snacks" viewBox="0 0 24 24"><path d="M12 6.53V3a1 1 0 0 1 1-1"/><path d="M18.24 21A15 15 0 0 0 22 11a6 6 0 0 0-10-4.47A6 6 0 0 0 2 11a15.1 15.1 0 0 0 3.76 10 3 3 0 0 0 3.65.65 5.5 5.5 0 0 1 5.18 0 3 3 0 0 0 3.65-.65"/></symbol>
+    <symbol id="i-Dinner" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+  </svg>
+
+  {% if user %}
+  {% set ep = request.endpoint or '' %}
+  <header class="appbar">
+    <a class="brand" href="{{ url_for('index') }}">
+      <span class="logo"><svg class="i"><use href="#i-leaf"/></svg></span>
+      <span class="brand-text"><b>Nutrelia</b><small>Understand your food. Nourish your future.</small></span>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="{{ url_for('index') }}" class="{{ 'on' if ep in ('index', 'day_view', 'match') }}"><svg class="i"><use href="#i-today"/></svg>Today</a>
+      <a href="{{ url_for('foods') }}" class="{{ 'on' if ep.startswith('foods') or ep in ('edit_food', 'new_food', 'import_foods') }}"><svg class="i"><use href="#i-foods"/></svg>Foods</a>
+      <a href="{{ url_for('friends') }}" class="{{ 'on' if ep.startswith('friend') or ep == 'copy_from_friend' }}"><svg class="i"><use href="#i-friends"/></svg>Friends</a>
+      <a href="{{ url_for('targets') }}" class="{{ 'on' if ep == 'targets' }}"><svg class="i"><use href="#i-target"/></svg>Targets</a>
+      {% if user.is_admin %}<a href="{{ url_for('people') }}" class="{{ 'on' if ep == 'people' }}"><svg class="i"><use href="#i-people"/></svg>People</a>{% endif %}
+      <a href="{{ url_for('account') }}" class="{{ 'on' if ep == 'account' }}" title="{{ user.name }}"><svg class="i"><use href="#i-user"/></svg>Me</a>
     </nav>
   </header>
+  {% endif %}
   <main>
     {% with msgs = get_flashed_messages() %}
-      {% for m in msgs %}<p class="flash">{{ m }}</p>{% endfor %}
+      {% for m in msgs %}<p class="flash" role="status"><svg class="i"><use href="#i-check"/></svg>{{ m }}</p>{% endfor %}
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
