@@ -9,6 +9,8 @@
     <label>Username <input name="username" autocomplete="username" autocapitalize="none" autofocus required></label>
     <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
     <button class="btn" style="width:100%">Sign in</button>
+    <p class="center"><a href="{{ url_for('forgot') }}">Forgot your password?</a></p>
+    {% if signup_open %}<p class="muted center">New to Nutrelia? <a href="{{ url_for('register') }}">Create an account</a></p>{% endif %}
   </form>
 </div>
 {% endblock %}

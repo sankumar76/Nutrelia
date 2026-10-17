@@ -1,0 +1,23 @@
+{# Health profile inputs, shared by sign-up and the Me page. `p` holds current values. #}
+<div class="grid">
+  <label>Sex
+    <select name="sex" required>
+      <option value="" disabled {{ 'selected' if not p.get('sex') }}>Choose</option>
+      {% for k, label in SEXES.items() %}<option value="{{ k }}" {{ 'selected' if p.get('sex') == k }}>{{ label }}</option>{% endfor %}
+    </select></label>
+  <label>Date of birth <input type="date" name="birth_date" value="{{ p.get('birth_date') or '' }}" required max="{{ today }}"></label>
+  <label>Height <small>cm</small> <input type="number" name="height_cm" step="0.1" min="100" max="250" inputmode="decimal" value="{{ p.get('height_cm') or '' }}" placeholder="e.g. 170" required></label>
+  <label>Weight <small>kg</small> <input type="number" name="weight_kg" step="0.1" min="25" max="350" inputmode="decimal" value="{{ p.get('weight_kg') or '' }}" placeholder="e.g. 68" required></label>
+</div>
+<label>How active are you?
+  <select name="activity" required>
+    <option value="" disabled {{ 'selected' if not p.get('activity') }}>Choose</option>
+    {% for k, (label, hint, _f) in ACTIVITY.items() %}<option value="{{ k }}" {{ 'selected' if p.get('activity') == k }}>{{ label }}: {{ hint }}</option>{% endfor %}
+  </select></label>
+<fieldset class="plain"><span class="label">Your goal</span>
+  <div class="segmented goal-pick">
+  {% for k, (label, _a, _p) in GOALS.items() %}
+    <label><input type="radio" name="goal" value="{{ k }}" {{ 'checked' if p.get('goal', 'maintain') == k }} required><span>{{ label }}</span></label>
+  {% endfor %}
+  </div>
+</fieldset>

@@ -14,7 +14,7 @@ from flask import Flask, abort, flash, g, redirect, render_template, request, se
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from nutrelia import db, matching, sources  # noqa: E402
+from nutrelia import db, matching, profile, sources  # noqa: E402
 from nutrelia.diary_parser import NUTRIENTS, parse_pdf  # noqa: E402
 from nutrelia.units import fmt_amount, parse_serving  # noqa: E402
 
@@ -137,7 +137,8 @@ def qty(value):
 @app.context_processor
 def inject():
     return {"NUTRIENTS": NUTRIENTS, "UNITS": UNITS, "MEALS": db.MEAL_ORDER, "user": g.get("user"),
-            "FOOD_SOURCES": FOOD_SOURCES}
+            "FOOD_SOURCES": FOOD_SOURCES, "SEXES": profile.SEXES, "ACTIVITY": profile.ACTIVITY,
+            "GOALS": profile.GOALS, "today": date.today().isoformat()}
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -148,10 +149,90 @@ def login():
             session.clear()
             session.permanent = True
             session["user_id"] = user["id"]
+            if not profile.is_complete(user):
+                flash("Add your age, height and weight on the Me page to get suggested daily targets.")
             nxt = request.args.get("next", "")
             return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("index"))
         flash("Wrong username or password.")
-    return render_template("login.html")
+    return render_template("login.html", signup_open=db.signup_open(get_db()))
+
+
+def check_new_password(password: str, again: str) -> str | None:
+    if len(password) < 6:
+        return "Use at least 6 characters for the password."
+    if password != again:
+        return "The two passwords don't match."
+    return None
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    conn = get_db()
+    if not db.signup_open(conn):
+        flash("New sign-ups are closed. Ask the admin to add you.")
+        return redirect(url_for("login"))
+    if request.method == "POST":
+        f = request.form
+        username = f.get("username", "").strip().lower()
+        name = f.get("name", "").strip()
+        values, errors = profile.read_form(f)
+        if not name:
+            errors.insert(0, "Tell us your name.")
+        if not username or not username.replace("_", "").replace(".", "").isalnum():
+            errors.insert(0, "Pick a username using letters and numbers only.")
+        elif conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
+            errors.insert(0, f"The username {username} is taken. Try another.")
+        if problem := check_new_password(f.get("password", ""), f.get("again", "")):
+            errors.append(problem)
+        missing = [label for key, label in (("sex", "sex"), ("birth_date", "date of birth"), ("height_cm", "height"),
+                                           ("weight_kg", "weight"), ("activity", "activity level"), ("goal", "goal"))
+                   if not values[key]]
+        if missing and not errors:
+            errors.append("Please fill in your " + ", ".join(missing) + ".")
+        if errors:
+            for e in errors:
+                flash(e)
+            return render_template("register.html", form=f)
+        uid = db.create_user(conn, username, name, f["password"])
+        db.set_profile(conn, uid, email=f.get("email", ""), **values)
+        user = conn.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
+        db.set_targets(conn, uid, profile.suggested_targets(user))
+        session.clear()
+        session.permanent = True
+        session["user_id"] = uid
+        session["recovery_code"] = db.new_recovery_code(conn, uid)
+        return redirect(url_for("welcome"))
+    return render_template("register.html", form={})
+
+
+@app.route("/welcome")
+@login_required
+def welcome():
+    code = session.pop("recovery_code", None)
+    if not code:
+        return redirect(url_for("index"))
+    return render_template("welcome.html", code=code, targets=db.get_targets(get_db(), g.user["id"]))
+
+
+@app.route("/forgot", methods=["GET", "POST"])
+def forgot():
+    if request.method == "POST":
+        conn = get_db()
+        user = db.check_recovery_code(conn, request.form.get("username", ""), request.form.get("code", ""))
+        problem = check_new_password(request.form.get("password", ""), request.form.get("again", ""))
+        if not user:
+            flash("That username and recovery code don't match.")
+        elif problem:
+            flash(problem)
+        else:
+            db.set_password(conn, user["id"], request.form["password"])
+            session.clear()
+            session.permanent = True
+            session["user_id"] = user["id"]
+            session["recovery_code"] = db.new_recovery_code(conn, user["id"])  # each code works once
+            flash("Password changed. You're signed in.")
+            return redirect(url_for("welcome"))
+    return render_template("forgot.html")
 
 
 @app.route("/logout")
@@ -324,7 +405,8 @@ def targets():
         db.set_targets(conn, g.user["id"], values)
         flash("Targets saved.")
         return redirect(request.form.get("back") or url_for("index"))
-    return render_template("targets.html", targets=db.get_targets(conn, g.user["id"]), back=request.args.get("back", ""))
+    return render_template("targets.html", targets=db.get_targets(conn, g.user["id"]), back=request.args.get("back", ""),
+                           suggested=profile.suggested_targets(g.user))
 
 
 @app.route("/foods/<int:food_id>", methods=["GET", "POST"])
@@ -480,20 +562,44 @@ def copy_from_friend(friend_id, day):
 @app.route("/account", methods=["GET", "POST"])
 @login_required
 def account():
+    conn = get_db()
     if request.method == "POST":
-        conn = get_db()
-        current, new, again = (request.form.get(k, "") for k in ("current", "new", "again"))
-        if not db.check_login(conn, g.user["username"], current):
-            flash("Your current password is wrong.")
-        elif len(new) < 6:
-            flash("Use at least 6 characters for the new password.")
-        elif new != again:
-            flash("The new passwords don't match.")
-        else:
-            db.set_password(conn, g.user["id"], new)
-            flash("Password changed.")
-            return redirect(url_for("index"))
-    return render_template("account.html")
+        action = request.form.get("action")
+        if action == "profile":
+            values, errors = profile.read_form(request.form)
+            for e in errors:
+                flash(e)
+            if not errors:
+                db.set_profile(conn, g.user["id"], name=request.form.get("name", "").strip() or None,
+                               email=request.form.get("email", ""), **values)
+                user = conn.execute("SELECT * FROM users WHERE id = ?", (g.user["id"],)).fetchone()
+                suggested = profile.suggested_targets(user)
+                if suggested and request.form.get("update_targets"):
+                    db.set_targets(conn, g.user["id"], suggested)
+                    flash("Profile saved, and your targets now match it.")
+                else:
+                    flash("Profile saved.")
+            return redirect(url_for("account"))
+        if action == "password":
+            current, new, again = (request.form.get(k, "") for k in ("current", "new", "again"))
+            if not db.check_login(conn, g.user["username"], current):
+                flash("Your current password is wrong.")
+            elif problem := check_new_password(new, again):
+                flash(problem)
+            else:
+                db.set_password(conn, g.user["id"], new)
+                flash("Password changed.")
+            return redirect(url_for("account"))
+        if action == "recovery":
+            session["recovery_code"] = db.new_recovery_code(conn, g.user["id"])
+            return redirect(url_for("welcome"))
+    user = g.user
+    profile_values = dict(user)
+    for k in ("height_cm", "weight_kg"):
+        profile_values[k] = fmt_amount(user[k]) if user[k] else ""
+    return render_template("account.html", profile_values=profile_values, age=profile.age_on(user["birth_date"]), bmi=profile.bmi(user),
+                           bmi_label=profile.bmi_label(profile.bmi(user)),
+                           suggested=profile.suggested_targets(user), targets=db.get_targets(conn, user["id"]))
 
 
 @app.route("/people", methods=["GET", "POST"])
@@ -522,6 +628,10 @@ def people():
             else:
                 db.set_password(conn, uid, password)
                 flash("Password reset.")
+        elif action == "signup":
+            db.set_signup_open(conn, request.form.get("open") == "1")
+            flash("Anyone can now create an account." if request.form.get("open") == "1" else
+                  "Sign-ups are closed. Only you can add people.")
         elif action == "delete" and uid and uid != g.user["id"]:
             db.delete_user(conn, uid)
             flash("Removed.")
@@ -531,7 +641,7 @@ def people():
                   (SELECT MAX(day) FROM log_entries l WHERE l.user_id = u.id) AS last_day
            FROM users u ORDER BY u.is_admin DESC, u.name COLLATE NOCASE"""
     ).fetchall()
-    return render_template("people.html", users=users)
+    return render_template("people.html", users=users, signup_open=db.signup_open(conn))
 
 
 @app.route("/foods/new", methods=["GET", "POST"])

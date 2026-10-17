@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Create your account · Nutrelia{% endblock %}
+{% block content %}
+<div class="auth">
+  <form method="post" class="card wide">
+    <span class="logo">{{ icon('leaf') }}</span>
+    <h1>Create your account</h1>
+    <p class="muted">Your profile sets sensible daily targets. You can change them any time.</p>
+    <h2 class="section">About you</h2>
+    <div class="grid">
+      <label>Your name <input name="name" value="{{ form.get('name', '') }}" autocomplete="name" placeholder="e.g. Priya Ramesh" required></label>
+      <label>Email <small>optional</small> <input type="email" name="email" value="{{ form.get('email', '') }}" autocomplete="email"></label>
+    </div>
+    {% with p = form %}{% include "_profile_fields.html" %}{% endwith %}
+    <h2 class="section">Sign-in details</h2>
+    <label>Username <input name="username" value="{{ form.get('username', '') }}" autocomplete="username" autocapitalize="none" placeholder="e.g. priya" required></label>
+    <div class="grid">
+      <label>Password <input type="password" name="password" autocomplete="new-password" minlength="6" required></label>
+      <label>Password again <input type="password" name="again" autocomplete="new-password" minlength="6" required></label>
+    </div>
+    <button class="btn" style="width:100%">Create account</button>
+    <p class="muted center">Already have an account? <a href="{{ url_for('login') }}">Sign in</a></p>
+  </form>
+</div>
+{% endblock %}

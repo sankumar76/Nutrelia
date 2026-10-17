@@ -405,3 +405,58 @@ def test_household_measures_and_other_names(conn, tmp_path):
     assert paratha["name"].startswith("Paneer parantha") and round(paratha["amount"]) == 170
     lasagne = conn.execute("SELECT id FROM foods WHERE source_ref = 'ASC200'").fetchone()[0]
     assert db.food_portions(conn).get(lasagne) is None  # a whole dish isn't a portion
+
+
+def test_suggested_targets():
+    from datetime import date
+    from nutrelia import profile
+    me = {"sex": "male", "birth_date": "1980-06-15", "height_cm": 175, "weight_kg": 80,
+          "activity": "moderate", "goal": "maintain"}
+    t = profile.suggested_targets(me, today=date(2026, 10, 17))
+    # 10*80 + 6.25*175 - 5*46 + 5 = 1668.75 resting; x1.55 = 2586.6 -> 2590 kcal
+    assert t == {"calories": 2590, "carbs": 357, "fat": 86, "protein": 96, "fiber": 36}
+    lose = profile.suggested_targets(dict(me, goal="lose", sex="female", activity="sedentary"), today=date(2026, 10, 17))
+    assert lose["calories"] == 1300 and lose["protein"] == 114  # 1.6 g/kg when losing, capped at 35% of calories
+    tiny = dict(me, sex="female", weight_kg=40, height_cm=145, activity="sedentary", goal="lose", birth_date="1950-01-01")
+    assert profile.suggested_targets(tiny, today=date(2026, 10, 17))["calories"] == 1200  # never below the floor
+    assert profile.suggested_targets(dict(me, height_cm=None)) is None
+    assert profile.nice_name("priya  ramesh") == "Priya Ramesh" and profile.nice_name("McDonald") == "McDonald"
+
+
+def test_sign_up_reset_password_and_capital_names(tmp_path, monkeypatch):
+    monkeypatch.setenv("NUTRELIA_DB", str(tmp_path / "app.db"))
+    monkeypatch.setenv("NUTRELIA_PASSWORD", "pw1234")
+    import importlib
+    import re
+    import app as app_module
+    importlib.reload(app_module)
+    c = app_module.app.test_client()
+    form = {"name": "priya ramesh", "username": "Priya", "email": "", "sex": "female", "birth_date": "1990-03-02",
+            "height_cm": "160", "weight_kg": "62", "activity": "light", "goal": "lose",
+            "password": "secret1", "again": "secret1"}
+    r = c.post("/register", data=dict(form, height_cm="12"))
+    assert b"Check your height" in r.data  # bad values are explained, the form keeps what was typed
+    r = c.post("/register", data=form, follow_redirects=True)
+    code = re.search(rb'class="recovery-code">([A-Z0-9-]+)<', r.data).group(1).decode()
+    conn = app_module.db.connect()
+    priya = conn.execute("SELECT * FROM users WHERE username = 'priya'").fetchone()
+    assert priya["name"] == "Priya Ramesh" and priya["height_cm"] == 160
+    assert app_module.db.get_targets(conn, priya["id"])["calories"] > 1200  # suggested targets were set
+    assert c.get("/welcome").status_code == 302  # the code is shown only once
+    # forgot password: the recovery code works once
+    anon = app_module.app.test_client()
+    r = anon.post("/forgot", data={"username": "priya", "code": code.lower().replace("-", ""), "password": "newpass",
+                                   "again": "newpass"}, follow_redirects=True)
+    assert b"Save your recovery code" in r.data
+    assert app_module.db.check_login(conn, "priya", "newpass")
+    r = anon.post("/forgot", data={"username": "priya", "code": code, "password": "other1", "again": "other1"})
+    assert b"don&#39;t match" in r.data
+    # the admin can close sign-ups
+    admin = app_module.app.test_client()
+    admin.post("/login", data={"username": "santhosh", "password": "pw1234"})
+    admin.post("/people", data={"action": "signup"})
+    assert b"Create an account" not in anon.get("/login").data
+    assert anon.get("/register").status_code == 302
+    # food names start with a capital
+    admin.post("/foods/new", data={"name": "ragi malt", "serving": "1 cup", "calories": "120"})
+    assert conn.execute("SELECT 1 FROM foods WHERE name = 'Ragi malt'").fetchone()

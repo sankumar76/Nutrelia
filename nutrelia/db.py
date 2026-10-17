@@ -13,7 +13,14 @@ from collections import Counter
 from pathlib import Path
 
 from .diary_parser import NUTRIENTS, DiaryEntry
+from .profile import PROFILE_FIELDS, nice_name
 from .units import convert, fmt_amount, parse_serving
+
+
+def cap_first(name: str) -> str:
+    """Food names start with a capital: 'chia seeds' -> 'Chia seeds'."""
+    name = name.strip()
+    return name[:1].upper() + name[1:]
 
 SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS foods (
@@ -110,6 +117,17 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE foods SET is_public = 1 WHERE created_by IS NULL AND source = 'mfp'")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS foods_source_ref ON foods (source, source_ref) "
                      "WHERE source_ref IS NOT NULL")
+        user_cols = _columns(conn, "users")
+        for col, kind in (("email", "TEXT"), ("sex", "TEXT"), ("birth_date", "TEXT"), ("height_cm", "REAL"),
+                          ("weight_kg", "REAL"), ("activity", "TEXT"), ("goal", "TEXT"), ("recovery_hash", "TEXT")):
+            if col not in user_cols:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {col} {kind}")
+        if not conn.execute("SELECT 1 FROM settings WHERE key = 'names_capitalised'").fetchone():
+            for r in conn.execute("SELECT id, name FROM users").fetchall():
+                conn.execute("UPDATE users SET name = ? WHERE id = ?", (nice_name(r["name"]), r["id"]))
+            for r in conn.execute("SELECT id, name FROM foods WHERE substr(name, 1, 1) GLOB '[a-z]'").fetchall():
+                conn.execute("UPDATE foods SET name = ? WHERE id = ?", (cap_first(r["name"]), r["id"]))
+            conn.execute("INSERT INTO settings (key, value) VALUES ('names_capitalised', '1')")
         if not conn.execute("SELECT 1 FROM settings WHERE key = 'my_foods_seeded'").fetchone() \
                 and conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
             # before personal lists existed: everyone starts with what they logged or added
@@ -174,6 +192,7 @@ def upsert_food(conn: sqlite3.Connection, name: str, serving: str, nutrients: di
             add_to_my_foods(conn, created_by, found[0])
         return found
     s = parse_serving(serving)
+    name = cap_first(name)
     cur = conn.execute(
         f"INSERT INTO foods (name, base_amount, unit, {', '.join(NUTRIENTS)}, source, created_by, is_public) "
         f"VALUES (?, ?, ?, {', '.join('?' * len(NUTRIENTS))}, ?, ?, ?)",
@@ -281,7 +300,8 @@ def create_user(conn: sqlite3.Connection, username: str, name: str, password: st
     with conn:
         cur = conn.execute(
             "INSERT INTO users (username, name, password_hash, is_admin) VALUES (?, ?, ?, ?)",
-            (username.strip(), name.strip() or username.strip(), generate_password_hash(password), int(is_admin)),
+            (username.strip(), nice_name(name.strip() or username.strip()), generate_password_hash(password),
+             int(is_admin)),
         )
         if is_admin and conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 1:
             _adopt_single_user_data(conn, cur.lastrowid)
@@ -298,6 +318,50 @@ def _adopt_single_user_data(conn: sqlite3.Connection, user_id: int) -> None:
             conn.execute("INSERT OR REPLACE INTO user_targets (user_id, nutrient, value) VALUES (?, ?, ?)",
                          (user_id, r["key"][len("target_"):], float(r["value"])))
     conn.execute("DELETE FROM settings WHERE key LIKE 'target_%'")
+
+
+def set_profile(conn: sqlite3.Connection, user_id: int, name: str | None = None, email: str | None = None,
+                **profile) -> None:
+    with conn:
+        if name:
+            conn.execute("UPDATE users SET name = ? WHERE id = ?", (nice_name(name), user_id))
+        if email is not None:
+            conn.execute("UPDATE users SET email = ? WHERE id = ?", (email.strip() or None, user_id))
+        for f in PROFILE_FIELDS:
+            if f in profile:
+                conn.execute(f"UPDATE users SET {f} = ? WHERE id = ?", (profile[f], user_id))
+
+
+def new_recovery_code(conn: sqlite3.Connection, user_id: int) -> str:
+    """A one-time code that lets someone reset a forgotten password. Only its hash is kept."""
+    import secrets
+    from werkzeug.security import generate_password_hash
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O or 1/I
+    code = "-".join("".join(secrets.choice(alphabet) for _ in range(4)) for _ in range(4))
+    with conn:
+        conn.execute("UPDATE users SET recovery_hash = ? WHERE id = ?", (generate_password_hash(code), user_id))
+    return code
+
+
+def check_recovery_code(conn: sqlite3.Connection, username: str, code: str):
+    from werkzeug.security import check_password_hash
+    user = conn.execute("SELECT * FROM users WHERE username = ?", (username.strip(),)).fetchone()
+    code = code.strip().upper().replace(" ", "")
+    if len(code) == 16 and "-" not in code:
+        code = "-".join(code[i:i + 4] for i in range(0, 16, 4))
+    if user and user["recovery_hash"] and check_password_hash(user["recovery_hash"], code):
+        return user
+    return None
+
+
+def signup_open(conn: sqlite3.Connection) -> bool:
+    row = conn.execute("SELECT value FROM settings WHERE key = 'signup_open'").fetchone()
+    return row is None or row["value"] == "1"
+
+
+def set_signup_open(conn: sqlite3.Connection, value: bool) -> None:
+    with conn:
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('signup_open', ?)", ("1" if value else "0",))
 
 
 def check_login(conn: sqlite3.Connection, username: str, password: str):
@@ -335,7 +399,7 @@ def save_public_food(conn: sqlite3.Connection, source: str, ref: str, name: str,
                      nutrients: dict, portions: list | None = None) -> bool:
     """Add or refresh a food from a public database (INDB, USDA, Open Food Facts). True if it was new.
     `portions` are (unit, grams, label) household measures."""
-    values = [name, base_amount, unit] + [nutrients.get(n) for n in NUTRIENTS]
+    values = [cap_first(name), base_amount, unit] + [nutrients.get(n) for n in NUTRIENTS]
     cols = ["name", "base_amount", "unit"] + list(NUTRIENTS)
     conn.execute(f"UPDATE foods SET {', '.join(c + ' = ?' for c in cols)} WHERE source = ? AND source_ref = ?",
                  values + [source, ref])
@@ -373,7 +437,7 @@ def update_food(conn: sqlite3.Connection, food_id: int, name: str, base_amount: 
     with conn:
         conn.execute(
             f"UPDATE foods SET name = ?, base_amount = ?, unit = ?, {', '.join(f'{n} = ?' for n in NUTRIENTS)} WHERE id = ?",
-            [name, base_amount, unit] + [nutrients.get(n) for n in NUTRIENTS] + [food_id],
+            [cap_first(name), base_amount, unit] + [nutrients.get(n) for n in NUTRIENTS] + [food_id],
         )
 
 

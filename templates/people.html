@@ -5,6 +5,12 @@
 <p class="muted">Everyone shares the food library. Each person has their own log and targets.</p>
 
 <form method="post" class="card">
+  <input type="hidden" name="action" value="signup">
+  <label class="toggle-row" style="border:0;padding:0"><span class="grow"><b>Anyone can create an account</b><br><small class="muted">Shows “Create an account” on the sign-in page. Turn off to add people yourself.</small></span>
+    <input type="checkbox" name="open" value="1" class="switch" {{ 'checked' if signup_open }} onchange="this.form.submit()"></label>
+</form>
+
+<form method="post" class="card">
   <div class="card-head"><h2>Add a person</h2></div>
   <input type="hidden" name="action" value="add">
   <div class="grid">

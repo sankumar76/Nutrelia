@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block content %}
+<div class="narrow">
+  <div class="page-head"><div><div class="eyebrow">Welcome, {{ user.name }}</div><h1>Save your recovery code</h1></div></div>
+  <section class="card">
+    <p style="margin-top:0">If you ever forget your password, this code lets you set a new one. Write it down or take a screenshot: it's shown only once, and each code works one time.</p>
+    <p class="recovery-code">{{ code }}</p>
+    <p class="muted">You can make a new code any time on the Me page.</p>
+  </section>
+  {% if targets.calories %}
+  <section class="card">
+    <div class="card-head"><h2>Your daily targets</h2><a href="{{ url_for('targets') }}">Change</a></div>
+    <p class="muted" style="margin-top:0">Suggested from your profile:</p>
+    <p><b>{{ targets.calories|amount }} kcal</b> · carbs {{ targets.carbs|amount }} g · fat {{ targets.fat|amount }} g · protein {{ targets.protein|amount }} g · fiber {{ targets.fiber|amount }} g</p>
+  </section>
+  {% endif %}
+  <a class="btn" style="width:100%" href="{{ url_for('index') }}">{{ icon('check') }} I've saved it, start logging</a>
+</div>
+{% endblock %}

@@ -10,6 +10,12 @@
       <label class="target-row macro {{ n }}"><span><i class="swatch"></i>{{ label }} <small>{{ unit }}</small></span>
         <input type="number" step="any" min="0" name="{{ n }}" value="{{ targets[n]|amount if targets[n] else '' }}" inputmode="decimal"></label>
     {% endfor %}
+    {% if suggested %}
+      <button type="button" class="btn outline" style="width:100%;margin-top:14px" data-suggested='{{ suggested|tojson }}'
+        onclick="var s=JSON.parse(this.dataset.suggested);for(var k in s){this.form.elements[k].value=s[k]}">Use suggested from my profile ({{ suggested.calories }} kcal)</button>
+    {% else %}
+      <p class="muted"><a href="{{ url_for('account') }}#profile">Fill in your profile</a> to get suggested targets.</p>
+    {% endif %}
     <button class="btn" style="width:100%">{{ icon('check') }} Save targets</button>
   </form>
 </div>

@@ -16,6 +16,14 @@ Set daily targets for calories, carbs, fat, protein and fiber (**Targets**), and
 shows the target, what you've eaten, and how much is left. Foods are logged under
 Breakfast, Lunch, Snacks or Dinner.
 
+People can **create their own account** from the sign-in page (the admin can turn this off on
+the People page). Signing up asks for sex, date of birth, height, weight, activity level and
+goal, and sets suggested daily targets from them: Mifflin-St Jeor calories for the activity
+level, adjusted for the goal (-500 kcal to lose, +300 to gain), protein by body weight, 30% of
+calories from fat, carbs for the rest, and 14 g of fiber per 1,000 kcal. Everyone can change
+their targets on the Targets page, or update their profile on the Me page. Each person gets a
+one-time **recovery code** for resetting a forgotten password (the admin can also reset it).
+
 Several people can use one Nutrelia. The admin adds them on the **People** page; each person
 signs in with their own username and password and has their own log and targets, while
 everyone shares the food library. Foods can be changed by the person who added them or

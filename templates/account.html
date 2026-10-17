@@ -9,13 +9,44 @@
       <div class="grow"><b>{{ user.name }}</b><small>Signed in as {{ user.username }}{% if user.is_admin %} · admin{% endif %}</small></div>
       <a class="btn outline" href="{{ url_for('logout') }}">Log out</a>
     </div></div>
+    {% if age or bmi %}
+    <div class="stats">
+      {% if age %}<div><b>{{ age }}</b><small>years</small></div>{% endif %}
+      {% if bmi %}<div><b>{{ bmi }}</b><small>BMI · {{ bmi_label }}</small></div>{% endif %}
+      {% if targets.calories %}<div><b>{{ targets.calories|amount }}</b><small>kcal a day</small></div>{% endif %}
+    </div>
+    {% endif %}
   </section>
+
+  <form method="post" class="card" id="profile">
+    <div class="card-head"><h2>Profile</h2></div>
+    {% if not suggested %}<p class="warn-text" style="margin-top:0">Complete your profile to get suggested daily targets.</p>{% endif %}
+    <input type="hidden" name="action" value="profile">
+    <div class="grid">
+      <label>Name <input name="name" value="{{ user.name }}" required></label>
+      <label>Email <small>optional</small> <input type="email" name="email" value="{{ user.email or '' }}"></label>
+    </div>
+    {% with p = profile_values %}{% include "_profile_fields.html" %}{% endwith %}
+    <label class="toggle-row"><span class="grow">Update my targets to match my profile
+      {% if suggested %}<br><small class="muted">Suggested now: {{ suggested.calories }} kcal · carbs {{ suggested.carbs }} g · fat {{ suggested.fat }} g · protein {{ suggested.protein }} g · fiber {{ suggested.fiber }} g</small>{% endif %}</span>
+      <input type="checkbox" name="update_targets" value="1" class="switch" {{ 'checked' if not targets.calories }}></label>
+    <button class="btn">{{ icon('check') }} Save profile</button>
+  </form>
+
   <form method="post" class="card">
     <div class="card-head"><h2>Change password</h2></div>
+    <input type="hidden" name="action" value="password">
     <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
     <label>New password <input type="password" name="new" autocomplete="new-password" minlength="6" required></label>
     <label>New password again <input type="password" name="again" autocomplete="new-password" minlength="6" required></label>
     <button class="btn">Change password</button>
+  </form>
+
+  <form method="post" class="card">
+    <div class="card-head"><h2>Recovery code</h2></div>
+    <p class="muted" style="margin-top:0">{% if user.recovery_hash %}You have a recovery code for resetting a forgotten password. Making a new one replaces it.{% else %}Make a recovery code so you can reset your password if you forget it.{% endif %}</p>
+    <input type="hidden" name="action" value="recovery">
+    <button class="btn outline">Make a new recovery code</button>
   </form>
 </div>
 {% endblock %}

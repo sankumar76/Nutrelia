@@ -323,3 +323,17 @@ button.icon.on { color: var(--accent); }
   :root:not([data-theme="light"]) .chip.src-usda { background: #1c2a45; color: #8fb0f2; }
   :root:not([data-theme="light"]) .chip.src-off { background: #2f2140; color: #c99be9; }
 }
+
+/* Sign-up, recovery code, profile */
+.auth .card.wide { max-width: 560px; }
+h2.section { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 22px 0 10px; }
+.center { text-align: center; }
+.label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: 6px; }
+.segmented.goal-pick { grid-template-columns: repeat(3, 1fr); }
+.segmented.goal-pick span { flex-direction: row; justify-content: center; padding: 11px 4px; font-size: .85rem; text-align: center; }
+.recovery-code { font: 700 1.35rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; text-align: center;
+  padding: 16px; border-radius: 14px; background: var(--accent-soft); color: var(--accent); user-select: all; word-break: break-all; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 10px; margin-top: 14px; }
+.stats div { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; }
+.stats b { display: block; font-size: 1.2rem; }
+.stats small { color: var(--muted); }

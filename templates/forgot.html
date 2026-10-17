@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Reset your password · Nutrelia{% endblock %}
+{% block content %}
+<div class="auth">
+  <form method="post" class="card">
+    <span class="logo">{{ icon('leaf') }}</span>
+    <h1>Reset your password</h1>
+    <p class="muted">Use the recovery code you saved when you signed up.</p>
+    <label>Username <input name="username" autocomplete="username" autocapitalize="none" required></label>
+    <label>Recovery code <input name="code" autocapitalize="characters" autocomplete="off" placeholder="XXXX-XXXX-XXXX-XXXX" required></label>
+    <label>New password <input type="password" name="password" autocomplete="new-password" minlength="6" required></label>
+    <label>New password again <input type="password" name="again" autocomplete="new-password" minlength="6" required></label>
+    <button class="btn" style="width:100%">Set new password</button>
+    <p class="muted center">Lost your code too? Ask the admin to reset your password from the People page.</p>
+    <p class="center"><a href="{{ url_for('login') }}">Back to sign in</a></p>
+  </form>
+</div>
+{% endblock %}
