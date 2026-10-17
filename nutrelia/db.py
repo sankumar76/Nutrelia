@@ -55,6 +55,13 @@ CREATE TABLE IF NOT EXISTS user_foods (  -- each person's own food list
     food_id INTEGER NOT NULL REFERENCES foods(id) ON DELETE CASCADE,
     PRIMARY KEY (user_id, food_id)
 );
+CREATE TABLE IF NOT EXISTS food_portions (  -- household measures of a gram-based food: 1 bowl = 250 g
+    food_id INTEGER NOT NULL REFERENCES foods(id) ON DELETE CASCADE,
+    unit TEXT NOT NULL,  -- one word, as people type it: bowl, cup, tbsp, slice, large
+    grams REAL NOT NULL,
+    label TEXT,  -- the source's own wording: "soup bowl", "cup, chopped"
+    PRIMARY KEY (food_id, unit)
+);
 CREATE TABLE IF NOT EXISTS user_targets (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     nutrient TEXT NOT NULL,
@@ -325,17 +332,34 @@ def set_public(conn: sqlite3.Connection, food_id: int, public: bool) -> None:
 
 
 def save_public_food(conn: sqlite3.Connection, source: str, ref: str, name: str, base_amount: float, unit: str,
-                     nutrients: dict) -> bool:
-    """Add or refresh a food from a public database (INDB, USDA, Open Food Facts). True if it was new."""
+                     nutrients: dict, portions: list | None = None) -> bool:
+    """Add or refresh a food from a public database (INDB, USDA, Open Food Facts). True if it was new.
+    `portions` are (unit, grams, label) household measures."""
     values = [name, base_amount, unit] + [nutrients.get(n) for n in NUTRIENTS]
     cols = ["name", "base_amount", "unit"] + list(NUTRIENTS)
-    cur = conn.execute(f"UPDATE foods SET {', '.join(c + ' = ?' for c in cols)} WHERE source = ? AND source_ref = ?",
-                       values + [source, ref])
-    if cur.rowcount:
-        return False
-    conn.execute(f"INSERT INTO foods ({', '.join(cols)}, source, source_ref, is_public) "
-                 f"VALUES ({', '.join('?' * len(cols))}, ?, ?, 1)", values + [source, ref])
-    return True
+    conn.execute(f"UPDATE foods SET {', '.join(c + ' = ?' for c in cols)} WHERE source = ? AND source_ref = ?",
+                 values + [source, ref])
+    row = conn.execute("SELECT id FROM foods WHERE source = ? AND source_ref = ?", (source, ref)).fetchone()
+    new = row is None
+    if new:
+        food_id = conn.execute(f"INSERT INTO foods ({', '.join(cols)}, source, source_ref, is_public) "
+                               f"VALUES ({', '.join('?' * len(cols))}, ?, ?, 1)", values + [source, ref]).lastrowid
+    else:
+        food_id = row["id"]
+    if portions is not None:
+        conn.execute("DELETE FROM food_portions WHERE food_id = ?", (food_id,))
+        conn.executemany("INSERT OR IGNORE INTO food_portions (food_id, unit, grams, label) VALUES (?, ?, ?, ?)",
+                         [(food_id, u, g, label) for u, g, label in portions if g and g > 0])
+    return new
+
+
+def food_portions(conn: sqlite3.Connection, food_ids=None) -> dict[int, dict[str, float]]:
+    """{food id: {unit: grams}}, in the order the source listed them (the first is the usual serving)."""
+    out: dict[int, dict[str, float]] = {}
+    for r in conn.execute("SELECT food_id, unit, grams FROM food_portions ORDER BY food_id, rowid"):
+        if food_ids is None or r["food_id"] in food_ids:
+            out.setdefault(r["food_id"], {})[r["unit"]] = r["grams"]
+    return out
 
 
 def visible_foods_sql(alias: str = "f") -> str:
@@ -359,6 +383,7 @@ def delete_food(conn: sqlite3.Connection, food_id: int) -> bool:
         return False
     with conn:
         conn.execute("DELETE FROM user_foods WHERE food_id = ?", (food_id,))
+        conn.execute("DELETE FROM food_portions WHERE food_id = ?", (food_id,))
         conn.execute("DELETE FROM foods WHERE id = ?", (food_id,))
     return True
 

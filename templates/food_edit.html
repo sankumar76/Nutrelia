@@ -16,6 +16,7 @@
     {% endfor %}
     </div>
     </fieldset>
+    {% if portions %}<p class="muted">Household measures: {% for u, g in portions.items() %}1 {{ u }} = {{ g|qty }} g{{ ', ' if not loop.last }}{% endfor %}. Type them when you log, like “2 {{ portions|first }}”.</p>{% endif %}
     <p class="muted">Logged {{ food.times_logged }}×{% if food.last_logged %}, last on {{ food.last_logged }}{% endif %}.{% if editable %} Changes also update the totals of days where it was logged.{% endif %}</p>
     <div class="row">
     {% if editable %}

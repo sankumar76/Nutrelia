@@ -49,7 +49,9 @@ python scripts/load_public_foods.py --usda FoodData_Central_sr_legacy_food_csv_2
 python scripts/load_public_foods.py --off-country india   # every product Open Food Facts lists for India
 ```
 
-Values from these databases are per 100 g, so type amounts in grams (`dosa 150 g`).
+Values from these databases are per 100 g. Their household measures come along too, so
+`palak paneer 1 bowl`, `rice 1 cup` or `idli 3` (three usual servings) work as well as grams.
+Foods can be found by their other names: INDB's *Hot tea (Garam Chai)* matches `garam chai`.
 Open Food Facts data is © Open Food Facts contributors under the ODbL; USDA data is public domain.
 
 On **Friends** you choose who can see your diary. People you share with see what you

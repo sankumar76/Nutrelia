@@ -21,7 +21,7 @@
         <input type="radio" name="food_{{ i }}" value="{{ f.id }}" {% if loop.first and line.status != 'weak' %}checked{% endif %}>
         <div class="body">
           <div class="title">{{ f.name }} {{ origin(f, user.id) }}</div>
-          <div class="sub">{{ kcal(f.calories) }} kcal per {{ f.serving }} · logged {{ f.times_logged }}×</div>
+          <div class="sub">{{ kcal(f.calories) }} kcal per {{ f.serving }}{% for u, g in f.portions.items() %}{% if loop.index <= 2 %} · 1 {{ u }} = {{ g|qty }} g{% endif %}{% endfor %}{% if f.times_logged %} · logged {{ f.times_logged }}×{% endif %}</div>
           <div class="amount-row">
             <span class="row" style="gap:6px"><input type="number" step="any" min="0" inputmode="decimal" name="amount_{{ i }}_{{ f.id }}" value="{{ f.amount|qty }}" aria-label="Amount in {{ f.unit }}"> {{ f.unit }}</span>
             <span class="result"><span class="r-kcal">{{ kcal(f.totals.calories) }}</span> kcal</span>

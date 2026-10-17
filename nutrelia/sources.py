@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Iterable, Iterator
 
 from .db import save_public_food
+from .units import canonical_unit, count_unit
 
 USER_AGENT = "Nutrelia/1.0 (https://github.com/sankumar76/Nutrelia)"
 
@@ -39,16 +40,41 @@ class PublicFood:
     nutrients: dict = field(default_factory=dict)
     base_amount: float = 100
     unit: str = "g"
+    portions: list = field(default_factory=list)  # (unit, grams, label): household measures
+
+
+MAX_PORTION_G = 600
+_MASS_WORDS = {"g", "kg", "oz", "lb", "mg"}
+
+
+def portion_unit(label: str) -> str | None:
+    """The one word people would type for a household measure: "soup bowl" -> bowl,
+    "cup, chopped" -> cup, "medium (7-1/4" long)" -> medium, "tablespoon" -> tbsp."""
+    head = re.split(r"[,(]", label or "", maxsplit=1)[0]
+    words = re.findall(r"[a-zA-Z]+", head.lower())
+    if not words:
+        return None
+    word = words[-1]
+    unit = canonical_unit(word) or count_unit(word)
+    return None if unit in _MASS_WORDS else unit
 
 
 def save(conn: sqlite3.Connection, foods: Iterable[PublicFood]) -> dict:
     added = updated = skipped = 0
     with conn:
         for f in foods:
-            if not f.name or f.nutrients.get("calories") is None:
+            if not f.name:
                 skipped += 1
                 continue
-            if save_public_food(conn, f.source, f.ref, f.name[:200], f.base_amount, f.unit, f.nutrients):
+            n = {k: (None if v is None else round(v, 2)) for k, v in f.nutrients.items()}
+            if n.get("calories") is None and None not in (n.get("carbs"), n.get("protein"), n.get("fat")):
+                n["calories"] = round(4 * n["carbs"] + 4 * n["protein"] + 9 * n["fat"], 1)
+            if n.get("calories") is None:
+                skipped += 1
+                continue
+            # a "dish", "jar" or whole chicken is a recipe's yield, not something one person eats
+            portions = [(u, round(g, 1), label) for u, g, label in f.portions if u and 0 < g <= MAX_PORTION_G]
+            if save_public_food(conn, f.source, f.ref, f.name[:200], f.base_amount, f.unit, n, portions):
                 added += 1
             else:
                 updated += 1
@@ -111,6 +137,7 @@ def load_indb(path: str | Path) -> Iterator[PublicFood]:
             name_col = next((k for k in ("food_name", "name", "food name", "recipe_name") if k in keys),
                             next((k for k in keys if "name" in k), None))
             ref_col = next((k for k in ("food_code", "code", "recipe_code") if k in keys), None)
+            serving_col = "servings_unit" if "servings_unit" in keys else None
             cols = {"name": name_col, "ref": ref_col}
             for n, options in _INDB_COLUMNS.items():
                 cols[n] = next((k for k in options if k in keys), None)
@@ -120,8 +147,18 @@ def load_indb(path: str | Path) -> Iterator[PublicFood]:
         if not name:
             continue
         ref = str(row.get(cols["ref"]) or "").strip() if cols["ref"] else ""
-        yield PublicFood("indb", ref or name.lower(), name,
-                         {n: _num(row.get(c)) for n, c in cols.items() if n not in ("name", "ref") and c})
+        food = PublicFood("indb", ref or name.lower(), name,
+                          {n: _num(row.get(c)) for n, c in cols.items() if n not in ("name", "ref") and c})
+        if serving_col and row.get(serving_col):
+            # INDB gives one household serving ("bowl") with its own nutrition; its weight is
+            # the ratio of the serving's values to the per-100 g ones
+            label = str(row[serving_col]).strip()
+            for key in ("energy_kcal", "carb_g", "protein_g", "fat_g"):
+                per100, per_serving = _num(row.get(key)), _num(row.get(f"unit_serving_{key}"))
+                if per100 and per_serving:
+                    food.portions.append((portion_unit(label), 100 * per_serving / per100, label))
+                    break
+        yield food
 
 
 # --- USDA FoodData Central ---------------------------------------------------
@@ -159,17 +196,34 @@ def load_usda(path: str | Path) -> Iterator[PublicFood]:
             key = wanted.get(r["nutrient_id"])
             if food is not None and key:
                 food[key] = _num(r.get("amount"))
+        try:
+            measures = {r["id"]: r["name"] for r in csv.DictReader(_open_member(z, "measure_unit.csv"))}
+            portion_rows = list(csv.DictReader(_open_member(z, "food_portion.csv")))
+        except ValueError:
+            measures, portion_rows = {}, []
+        portion_rows.sort(key=lambda r: (r["fdc_id"], _num(r.get("seq_num")) or 0, _num(r.get("id")) or 0))
+        for r in portion_rows:
+            food = foods.get(r["fdc_id"])
+            grams, amount = _num(r.get("gram_weight")), _num(r.get("amount")) or 1
+            if food is None or not grams:
+                continue
+            measure = measures.get(r.get("measure_unit_id"), "")
+            label = (r.get("modifier") or "").strip() if measure in ("", "undetermined") else \
+                " ".join(x for x in (measure, (r.get("modifier") or "").strip()) if x)
+            if r.get("portion_description"):
+                label = label or r["portion_description"].strip()
+            food.setdefault("portions", []).append((portion_unit(label), grams / amount, label))
     for fdc_id, f in foods.items():
         if f.get("calories") is None:
             f["calories"] = f.get("energy1") if f.get("energy1") is not None else f.get("energy2")
         yield PublicFood("usda", fdc_id, f["name"],
                          {n: f.get(n) for n in ("calories", "carbs", "fat", "protein", "fiber", "sugar",
-                                                "sodium", "cholesterol")})
+                                                "sodium", "cholesterol")}, portions=f.get("portions", []))
 
 
 # --- Open Food Facts ---------------------------------------------------------
 
-OFF_FIELDS = "code,product_name,product_name_en,brands,nutriments,countries_tags"
+OFF_FIELDS = "code,product_name,product_name_en,brands,nutriments,countries_tags,serving_size,serving_quantity"
 
 
 def _off_food(p: dict) -> PublicFood | None:
@@ -189,7 +243,9 @@ def _off_food(p: dict) -> PublicFood | None:
     if kcal is None and g("energy") is not None:
         kcal = g("energy") / 4.184  # kJ
     sodium, chol = g("sodium"), g("cholesterol")
-    return PublicFood("off", code, re.sub(r"\s+", " ", name), {
+    serving = _num(p.get("serving_quantity"))
+    portions = [("serving", serving, p.get("serving_size") or "serving")] if serving else []
+    return PublicFood("off", code, re.sub(r"\s+", " ", name), portions=portions, nutrients={
         "calories": None if kcal is None else round(kcal, 1),
         "carbs": g("carbohydrates"), "fat": g("fat"), "protein": g("proteins"),
         "fiber": g("fiber"), "sugar": g("sugars"),

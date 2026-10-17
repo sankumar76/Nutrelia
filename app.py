@@ -356,8 +356,9 @@ def edit_food(food_id):
         flash(f"Saved {name}.")
         return redirect(url_for("foods", q=name))
     in_mine = food["id"] in db.my_food_ids(get_db(), g.user["id"])
+    portions = db.food_portions(conn, {food_id}).get(food_id, {})
     return render_template("food_edit.html", food=food, serving=db.serving_label(food), editable=can_edit_food(food),
-                           in_mine=in_mine)
+                           in_mine=in_mine, portions=portions)
 
 
 @app.route("/foods/import", methods=["GET", "POST"])

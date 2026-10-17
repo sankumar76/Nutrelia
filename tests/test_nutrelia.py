@@ -387,3 +387,21 @@ def test_private_food_pages_and_admin_public_list(tmp_path, monkeypatch):
     admin.post(f"/foods/{food['id']}", data={"public": "1"})
     assert ravi.get(f"/foods/{food['id']}").status_code == 200
     assert priya.post(f"/foods/{food['id']}", data={"name": "x", "serving": "1 bowl", "calories": "1"}).status_code == 403
+
+
+def test_household_measures_and_other_names(conn, tmp_path):
+    from nutrelia import sources
+    indb = tmp_path / "indb.csv"
+    indb.write_text("food_code,food_name,energy_kcal,carb_g,protein_g,fat_g,servings_unit,unit_serving_energy_kcal\n"
+                    "ASC001,Hot tea (Garam Chai),16,2.6,0.4,0.5,tea cup,33.6\n"
+                    "ASC100,Paneer parantha/paratha,263,30,8,12,parantha,223.6\n"
+                    "ASC200,Lasagne with vegetables,49,6,2,2,dish,865\n")
+    sources.save(conn, sources.load_indb(indb))
+    assert sources.portion_unit("cup, chopped") == "cup" and sources.portion_unit("soup bowl") == "bowl"
+    assert sources.portion_unit("tablespoon") == "tbsp" and sources.portion_unit("oz") is None
+    tea = matching.match_line(conn, "garam chai 2 cup").options[0]  # found by its other name
+    assert tea["name"] == "Hot tea (Garam Chai)" and round(tea["amount"]) == 420  # 2 tea cups of 210 g
+    paratha = matching.match_line(conn, "paneer paratha 2").options[0]  # either spelling; a bare number = servings
+    assert paratha["name"].startswith("Paneer parantha") and round(paratha["amount"]) == 170
+    lasagne = conn.execute("SELECT id FROM foods WHERE source_ref = 'ASC200'").fetchone()[0]
+    assert db.food_portions(conn).get(lasagne) is None  # a whole dish isn't a portion

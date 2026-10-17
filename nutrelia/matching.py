@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from rapidfuzz import fuzz, process
 
-from .db import scale, serving_label
+from .db import food_portions, scale, serving_label
 from .units import _NUMBER, canonical_unit, convert, count_unit, to_number
 
 AUTO_PICK_SCORE = 90
@@ -75,9 +75,22 @@ def parse_request(line: str) -> Request:
     return Request(line)
 
 
-def amount_for(food, req: Request) -> tuple[float, bool]:
-    """How much of `food` (in its own unit) the request means, and whether the request's unit fit."""
+def _portion_grams(portions: dict, unit: str) -> float | None:
+    """Grams in one `unit` from a food's household measures, converting tsp/tbsp/cup/ml between each other."""
+    if unit in portions:
+        return portions[unit]
+    for known, grams in portions.items():
+        k = convert(1, unit, known)
+        if k is not None:
+            return grams * k
+    return None
+
+
+def amount_for(food, req: Request, portions: dict | None = None) -> tuple[float, bool]:
+    """How much of `food` (in its own unit) the request means, and whether the request's unit fit.
+    `portions` ({unit: grams}) lets "dal 1 bowl" work for a food measured in grams."""
     base = food["base_amount"]
+    by_weight = portions and convert(1, "g", food["unit"]) is not None
     if req.number is None:
         return base, True
     if req.multiplier:
@@ -86,9 +99,18 @@ def amount_for(food, req: Request) -> tuple[float, bool]:
         canon = canonical_unit(req.unit)
         if canon:
             converted = convert(req.number, canon, food["unit"])
-            return (converted, True) if converted is not None else (base, False)
+            if converted is not None:
+                return converted, True
+        unit = canon or count_unit(req.unit)
+        if by_weight and (grams := _portion_grams(portions, unit)):
+            return convert(req.number * grams, "g", food["unit"]), True
+        if canon:
+            return base, False
         if count_unit(req.unit) == food["unit"] or food["unit"].startswith(count_unit(req.unit)):
             return req.number, True
+    if by_weight and req.unit is None:
+        # "dosa 2": two of the usual household serving
+        return convert(req.number * next(iter(portions.values())), "g", food["unit"]), True
     # a bare number: a count ("egg white 4" -> 4 large) for count units, else that many servings
     if food["unit"] in ("g", "kg", "oz", "lb", "tsp", "tbsp", "cup", "ml", "l"):
         return base * req.number, True
@@ -104,25 +126,59 @@ def _norm(s: str) -> str:
 PUBLIC_ORDER = {"mfp": 1, "indb": 2, "usda": 3, "off": 4}
 
 
+def _blend(q: str, q_words: set, name: str, wratio: float) -> float:
+    """WRatio rewards any shared word ("masala chai" ~ "channa masala"), which stops telling foods
+    apart in a big library. A name holding every typed word scores high, shorter names higher;
+    otherwise whole-name similarity is blended in."""
+    words = name.split()
+    if q_words <= {w.rstrip("s") for w in words}:
+        return max(wratio, 88 + 10 * len(q_words) / max(len(words), 1))
+    return (wratio + fuzz.token_sort_ratio(q, name)) / 2
+
+
+def name_aliases(name: str) -> list[str]:
+    """The names a food goes by: "Onion - Onion" also as "Onion"; "Hot tea (Garam Chai)" also as
+    "Garam Chai"; "Paneer parantha/paratha" also as "Paneer paratha"."""
+    out = [name, name.split(" - ", 1)[-1]]
+    main = re.sub(r"\([^)]*\)", " ", name).strip()
+    out.append(main)
+    for inner in re.findall(r"\(([^)]*)\)", name):
+        out += [p for p in re.split(r"[,/]", inner) if p.strip()]
+    m = re.match(r"^(.*?)(\w+)/(\w+)(.*)$", main)  # "Dal parantha/paratha": both spellings
+    if m:
+        out += [m[1] + m[2] + m[4], m[1] + m[3] + m[4]]
+    seen, result = set(), []
+    for a in map(_norm, out):
+        if a and a not in seen:
+            seen.add(a)
+            result.append(a)
+    return result
+
+
 class FoodIndex:
     """Foods with their names normalised once, so each typed line is scored against all of them quickly."""
 
-    def __init__(self, foods: list):
+    def __init__(self, foods: list, portions: dict | None = None):
         self.foods = foods
-        self.names = [_norm(f["name"]) for f in foods]
-        self.shorts = [_norm(f["name"].split(" - ", 1)[-1]) for f in foods]
+        self.portions = portions or {}
+        self.aliases, self.owner = [], []
+        for i, f in enumerate(foods):
+            for a in name_aliases(f["name"]):
+                self.aliases.append(a)
+                self.owner.append(i)
 
     def scored(self, query: str) -> list[tuple[float, object]]:
         q = _norm(query)
         if not q:
             return []
         best: dict[int, float] = {}
-        for names in (self.names, self.shorts):
-            for _, score, i in process.extract(q, names, scorer=fuzz.WRatio, score_cutoff=MIN_SCORE, limit=None):
-                best[i] = max(best.get(i, 0), score)
-        for i, (name, short) in enumerate(zip(self.names, self.shorts)):
-            if q in (name, short) or q.rstrip("s") in (name, short):
-                best[i] = 101  # exact name always wins
+        q_words = {w.rstrip("s") for w in q.split()}
+        for alias, score, j in process.extract(q, self.aliases, scorer=fuzz.WRatio, score_cutoff=MIN_SCORE,
+                                               limit=None):
+            i = self.owner[j]
+            score = 101 if q in (alias, alias.rstrip("s")) or q.rstrip("s") == alias else _blend(q, q_words, alias, score)
+            if score >= MIN_SCORE:
+                best[i] = max(best.get(i, 0), score)  # exact name always wins (101)
         return [(score, self.foods[i]) for i, score in best.items()]
 
 
@@ -137,8 +193,8 @@ def _in_mine(food) -> bool:
     return "in_mine" in food.keys() and bool(food["in_mine"])
 
 
-def _option(food, req: Request, score: float, user_id: int | None) -> dict:
-    amount, unit_fits = amount_for(food, req)
+def _option(food, req: Request, score: float, user_id: int | None, portions: dict | None = None) -> dict:
+    amount, unit_fits = amount_for(food, req, portions)
     return dict(food) | {
         "tier": food_tier(food, user_id),
         "mine": _in_mine(food),
@@ -146,6 +202,7 @@ def _option(food, req: Request, score: float, user_id: int | None) -> dict:
         "amount": round(amount, 2),
         "unit_fits": unit_fits,
         "serving": serving_label(food),
+        "portions": portions or {},
         "totals": scale(food, amount),
     }
 
@@ -154,7 +211,7 @@ def match_line(conn: sqlite3.Connection, line: str, foods: list | FoodIndex | No
                user_id: int | None = None) -> LineMatch:
     req = parse_request(line)
     foods = foods if foods is not None else _foods(conn, user_id)
-    index = foods if isinstance(foods, FoodIndex) else FoodIndex(foods)
+    index = foods if isinstance(foods, FoodIndex) else FoodIndex(foods, food_portions(conn))
     scored = index.scored(req.query)
     if not scored and req.unit:
         # the "unit" may really be part of the name ("2 eggs" -> unit "eggs")
@@ -166,14 +223,14 @@ def match_line(conn: sqlite3.Connection, line: str, foods: list | FoodIndex | No
         return result
     top = max(s for s, _ in scored)
     keep = [(s, f) for s, f in scored if s >= max(MIN_SCORE, top - 8)]
-    opts = [_option(f, req, s, user_id) for s, f in keep]
+    opts = [_option(f, req, s, user_id, index.portions.get(f["id"])) for s, f in keep]
     # Your own foods answer first. Only when none of them is among the best matches does the
-    # public list come in, and then you always choose (original foods before ones people added).
-    # Within each, best name, a unit that fits what was typed, and most logged.
+    # public list come in, and then you always choose.
     mine = [o for o in opts if o["mine"]]
     result.public = not mine
     opts = mine or opts
-    opts.sort(key=lambda o: (o["tier"], -o["score"], not o["unit_fits"], -(o["times_logged"] or 0)))
+    # names that match about equally well (within 5 points) go by source order; a clearly better name wins
+    opts.sort(key=lambda o: (-(o["score"] // 5), o["tier"], -o["score"], not o["unit_fits"], -(o["times_logged"] or 0)))
     result.options = opts[:12]
     best = max(o["score"] for o in opts)
     if best < WEAK_SCORE:
@@ -197,5 +254,5 @@ def _foods(conn: sqlite3.Connection, user_id: int | None) -> list:
 
 
 def match_text(conn: sqlite3.Connection, text: str, user_id: int | None = None) -> list[LineMatch]:
-    foods = FoodIndex(_foods(conn, user_id))
+    foods = FoodIndex(_foods(conn, user_id), food_portions(conn))
     return [match_line(conn, line, foods, user_id) for line in split_lines(text)]
