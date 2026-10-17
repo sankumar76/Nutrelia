@@ -6,9 +6,9 @@
   --text: #16201a;
   --muted: #64706a;
   --line: #e3e8e3;
-  --accent: #0f8a5f;
-  --accent-2: #12a571;
-  --accent-soft: #e2f4ec;
+  --accent: #1f7a57;
+  --accent-2: #2e8a64;
+  --accent-soft: #e7f1ec;
   --accent-ink: #ffffff;
   --carbs: #e39a12;
   --fat: #e2556f;
@@ -31,14 +31,14 @@
     --text: #e8eee9;
     --muted: #97a39c;
     --line: #26302a;
-    --accent: #3ccf93;
-    --accent-2: #5fdcaa;
-    --accent-soft: #173327;
+    --accent: #5aa886;
+    --accent-2: #67b292;
+    --accent-soft: #1b2b24;
     --accent-ink: #062016;
     --carbs: #c08419;
     --fat: #d4566e;
     --protein: #757cf0;
-    --fiber: #45c99b;
+    --fiber: #4fae8a;
     --warn: #f2b45a;
     --warn-soft: #36290f;
     --bad: #ff8b80;
@@ -74,7 +74,7 @@ svg.i { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor;
 .brand { display: flex; align-items: center; gap: 10px; color: var(--text); }
 .brand:hover { text-decoration: none; }
 .logo { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; color: #fff;
-  background: linear-gradient(135deg, var(--accent-2), var(--accent)); box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent); }
+  background: linear-gradient(135deg, var(--accent-2), var(--accent)); box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 20%, transparent); }
 .logo svg.i { width: 20px; height: 20px; }
 .brand-text b { display: block; font-size: 1.1rem; letter-spacing: -.01em; line-height: 1.1; }
 .brand-text small { display: block; font-size: .72rem; color: var(--muted); line-height: 1.2; }
@@ -138,7 +138,7 @@ fieldset.plain { border: 0; padding: 0; margin: 0; min-width: 0; }
   font: inherit; font-weight: 650; font-size: .95rem;
   padding: 12px 18px; border: 0; border-radius: var(--radius-sm); cursor: pointer;
   background: var(--accent); color: var(--accent-ink);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--accent) 18%, transparent);
   transition: transform .06s, filter .15s;
 }
 .btn:hover, button:hover { filter: brightness(1.05); text-decoration: none; }
