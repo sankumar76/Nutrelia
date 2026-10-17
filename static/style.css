@@ -398,3 +398,4 @@ body:not([data-view]) .view-cards { display: none; }
   .nutri-table tr.meal-row th { padding: 14px 12px 4px; }
   .nutri-table tfoot th a { display: block; margin: 0; }
 }
+.section-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 18px 0 4px; }

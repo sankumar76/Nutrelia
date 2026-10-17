@@ -533,16 +533,31 @@ def public_foods():
 @app.route("/friends", methods=["GET", "POST"])
 @login_required
 def friends():
+    """Share your diary with people whose username you know; nobody sees a list of everyone."""
     conn = get_db()
+    me = g.user["id"]
     if request.method == "POST":
-        chosen = {int(v) for v in request.form.getlist("viewer") if v.isdigit()}
-        db.set_shared_with(conn, g.user["id"], chosen)
-        flash("Sharing updated." if chosen else "Your diary is now private.")
+        if request.form.get("action") == "remove":
+            viewer = request.form.get("viewer", type=int)
+            db.set_shared_with(conn, me, db.shared_with(conn, me) - {viewer})
+            flash("Stopped sharing with them.")
+        else:
+            username = request.form.get("username", "").strip().lstrip("@")
+            other = conn.execute("SELECT id, name FROM users WHERE username = ?", (username,)).fetchone()
+            if not username:
+                flash("Type your friend's username.")
+            elif not other:
+                flash(f"No one on Nutrelia has the username {username}. Check the spelling with your friend.")
+            elif other["id"] == me:
+                flash("That's your own username.")
+            else:
+                db.set_shared_with(conn, me, db.shared_with(conn, me) | {other["id"]})
+                flash(f"{other['name']} can now see your diary.")
         return redirect(url_for("friends"))
-    others = conn.execute("SELECT id, name, username FROM users WHERE id != ? ORDER BY name COLLATE NOCASE",
-                          (g.user["id"],)).fetchall()
-    return render_template("friends.html", others=others, sharing=db.shared_with(conn, g.user["id"]),
-                           friends=db.friends_sharing_with(conn, g.user["id"]))
+    ids = db.shared_with(conn, me)
+    sharing = conn.execute(f"SELECT id, name, username FROM users WHERE id IN ({','.join('?' * len(ids))}) "
+                           "ORDER BY name COLLATE NOCASE", list(ids)).fetchall() if ids else []
+    return render_template("friends.html", sharing=sharing, friends=db.friends_sharing_with(conn, me))
 
 
 def friend_or_404(friend_id: int):

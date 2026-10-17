@@ -19,18 +19,26 @@
   {% else %}<p class="empty">Nobody has shared their diary with you yet.</p>{% endif %}
 </section>
 
-<form method="post" class="card">
-  <div class="card-head"><h2>Share my diary with</h2></div>
-  <p class="muted" style="margin-top:-6px">They'll see what you eat each day and can copy meals into their own diary. Your targets stay private.</p>
-  {% for o in others %}
-    <label class="toggle-row">
+<section class="card">
+  <div class="card-head"><h2>Share my diary</h2></div>
+  <p class="muted" style="margin-top:-6px">Type a friend's username to let them see what you eat each day and copy meals into their own diary. Your targets stay private. Your username is <b>{{ user.username|cap }}</b>; give it to friends so they can share with you.</p>
+  <form method="post" class="row">
+    <input type="hidden" name="action" value="add">
+    <input name="username" placeholder="Friend's username" autocapitalize="none" autocomplete="off" required aria-label="Friend's username">
+    <button class="btn">{{ icon('plus') }} Share</button>
+  </form>
+  {% if sharing %}
+  <h3 class="section-label">Sharing with</h3>
+  <ul class="list">
+    {% for o in sharing %}
+    <li><div class="item">
       <span class="avatar">{{ o.name[:1]|upper }}</span>
-      <span class="grow">{{ o.name }} <small class="muted">{{ o.username|cap }}</small></span>
-      <input class="switch" type="checkbox" name="viewer" value="{{ o.id }}" {% if o.id in sharing %}checked{% endif %}>
-    </label>
-  {% else %}
-    <p class="empty">There's nobody else on Nutrelia yet.</p>
-  {% endfor %}
-  {% if others %}<button class="block" style="margin-top:12px">Save sharing</button>{% endif %}
-</form>
+      <span class="grow"><b>{{ o.name }}</b><small>{{ o.username|cap }}</small></span>
+      <form method="post"><input type="hidden" name="action" value="remove"><input type="hidden" name="viewer" value="{{ o.id }}">
+        <button class="btn ghost" title="Stop sharing with {{ o.name }}">Stop sharing</button></form>
+    </div></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="empty">Your diary is private.</p>{% endif %}
+</section>
 {% endblock %}

@@ -287,7 +287,10 @@ def test_sharing_a_diary(tmp_path, monkeypatch):
     sid = conn.execute("SELECT id FROM users WHERE username='santhosh'").fetchone()[0]
     pid = conn.execute("SELECT id FROM users WHERE username='priya'").fetchone()[0]
     assert priya.get(f"/friends/{sid}/day/2025-10-01").status_code == 404  # not shared yet
-    admin.post("/friends", data={"viewer": [str(pid)]})
+    page = admin.get("/friends").data
+    assert b"Priya" not in page  # nobody sees a list of everyone
+    assert b"No one on Nutrelia" in admin.post("/friends", data={"username": "pria"}, follow_redirects=True).data
+    admin.post("/friends", data={"username": "Priya"})
     assert b"Santhosh" in priya.get("/friends").data
     assert b"Sambar" in priya.get(f"/friends/{sid}/day/2025-10-01").data
     assert admin.get(f"/friends/{pid}/day/2025-10-01").status_code == 404  # sharing is one way
@@ -295,7 +298,7 @@ def test_sharing_a_diary(tmp_path, monkeypatch):
     r = priya.post(f"/friends/{sid}/day/2025-10-01/copy", data={"meal": meal, "to": "2026-02-01"})
     assert r.status_code == 302
     assert conn.execute("SELECT COUNT(*) FROM log_entries WHERE user_id=? AND day='2026-02-01'", (pid,)).fetchone()[0] > 0
-    admin.post("/friends", data={})  # stop sharing
+    admin.post("/friends", data={"action": "remove", "viewer": str(pid)})  # stop sharing
     assert priya.get(f"/friends/{sid}/day/2025-10-01").status_code == 404
 
 
