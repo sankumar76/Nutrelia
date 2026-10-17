@@ -10,10 +10,12 @@
   {% for line in lines %}{% set i = loop.index0 %}
   <fieldset class="card match">
     <legend>“{{ line.text }}”
-      {% if line.status == 'choose' %}<span class="chip warn">{{ line.options|length }} options</span>
+      {% if line.public and line.options %}<span class="chip warn">From the public list</span>
+      {% elif line.status == 'choose' %}<span class="chip warn">{{ line.options|length }} options</span>
       {% elif line.status == 'auto' %}<span class="chip">Matched</span>
-      {% else %}<span class="chip bad">Not in your foods</span>{% endif %}
+      {% else %}<span class="chip bad">Not found</span>{% endif %}
     </legend>
+    {% if line.public and line.options %}<p class="muted" style="margin:-4px 0 12px">Not in My foods yet. The one you pick is added to your list.</p>{% endif %}
     {% for f in line.options %}
       <label class="choice" data-base="{{ f.base_amount }}" data-cal="{{ f.calories or 0 }}" data-carbs="{{ f.carbs or 0 }}" data-fat="{{ f.fat or 0 }}" data-protein="{{ f.protein or 0 }}" data-fiber="{{ f.fiber or 0 }}">
         <input type="radio" name="food_{{ i }}" value="{{ f.id }}" {% if loop.first and line.status != 'weak' %}checked{% endif %}>

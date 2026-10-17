@@ -50,6 +50,11 @@ CREATE TABLE IF NOT EXISTS shares (
     viewer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     PRIMARY KEY (owner_id, viewer_id)
 );
+CREATE TABLE IF NOT EXISTS user_foods (  -- each person's own food list
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    food_id INTEGER NOT NULL REFERENCES foods(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, food_id)
+);
 CREATE TABLE IF NOT EXISTS user_targets (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     nutrient TEXT NOT NULL,
@@ -91,6 +96,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # foods typed in before accounts existed belong to the first admin
         conn.execute("""UPDATE foods SET created_by = (SELECT MIN(id) FROM users WHERE is_admin = 1)
                         WHERE source = 'manual' AND created_by IS NULL""")
+        if not conn.execute("SELECT 1 FROM settings WHERE key = 'my_foods_seeded'").fetchone() \
+                and conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
+            # before personal lists existed: everyone starts with what they logged or added
+            _seed_my_foods(conn)
+            conn.execute("INSERT INTO settings (key, value) VALUES ('my_foods_seeded', '1')")
+
+
+def _seed_my_foods(conn: sqlite3.Connection) -> None:
+    conn.execute("""INSERT OR IGNORE INTO user_foods (user_id, food_id)
+                    SELECT DISTINCT user_id, food_id FROM log_entries WHERE user_id IS NOT NULL""")
+    conn.execute("""INSERT OR IGNORE INTO user_foods (user_id, food_id)
+                    SELECT created_by, id FROM foods WHERE created_by IS NOT NULL""")
 
 
 def scale(food, amount: float) -> dict:
@@ -134,6 +151,8 @@ def upsert_food(conn: sqlite3.Connection, name: str, serving: str, nutrients: di
     """Return (food id, amount in that food's unit), creating the food if no existing one matches."""
     found = find_food(conn, name, serving, nutrients)
     if found:
+        if created_by is not None:
+            add_to_my_foods(conn, created_by, found[0])
         return found
     s = parse_serving(serving)
     cur = conn.execute(
@@ -141,6 +160,8 @@ def upsert_food(conn: sqlite3.Connection, name: str, serving: str, nutrients: di
         f"VALUES (?, ?, ?, {', '.join('?' * len(NUTRIENTS))}, ?, ?)",
         [name, s.amount, s.unit] + [nutrients.get(n) for n in NUTRIENTS] + [source, created_by],
     )
+    if created_by is not None:
+        add_to_my_foods(conn, created_by, cur.lastrowid)
     return cur.lastrowid, s.amount
 
 
@@ -161,6 +182,9 @@ def import_entries(conn: sqlite3.Connection, entries: list[DiaryEntry], user_id:
                 "INSERT INTO log_entries (user_id, day, meal, food_id, amount, position) VALUES (?, ?, ?, ?, ?, ?)",
                 (user_id, e.date, e.meal, fid, amount, pos),
             )
+        if user_id is not None:
+            for fid, _amount in resolved.values():
+                add_to_my_foods(conn, user_id, fid)
         refresh_usage(conn)
     after = conn.execute("SELECT COUNT(*) FROM foods").fetchone()[0]
     return {"entries": len(entries), "days": len(days), "new_foods": after - before, "total_foods": after}
@@ -194,6 +218,23 @@ def add_entry(conn: sqlite3.Connection, user_id: int, day: str, meal: str, food_
             "UPDATE foods SET times_logged = times_logged + 1, last_logged = MAX(IFNULL(last_logged, ''), ?) WHERE id = ?",
             (day, food_id),
         )
+        add_to_my_foods(conn, user_id, food_id)
+
+
+# --- each person's own food list ---------------------------------------------
+
+def add_to_my_foods(conn: sqlite3.Connection, user_id: int, food_id: int) -> None:
+    conn.execute("INSERT OR IGNORE INTO user_foods (user_id, food_id) VALUES (?, ?)", (user_id, food_id))
+
+
+def remove_from_my_foods(conn: sqlite3.Connection, user_id: int, food_id: int) -> None:
+    """Take a food off someone's list. Their log keeps it; it just stops coming up first."""
+    with conn:
+        conn.execute("DELETE FROM user_foods WHERE user_id = ? AND food_id = ?", (user_id, food_id))
+
+
+def my_food_ids(conn: sqlite3.Connection, user_id: int) -> set[int]:
+    return {r[0] for r in conn.execute("SELECT food_id FROM user_foods WHERE user_id = ?", (user_id,))}
 
 
 def get_targets(conn: sqlite3.Connection, user_id: int) -> dict:
@@ -230,6 +271,8 @@ def create_user(conn: sqlite3.Connection, username: str, name: str, password: st
 def _adopt_single_user_data(conn: sqlite3.Connection, user_id: int) -> None:
     """The first account takes over the log and targets kept before Nutrelia had accounts."""
     conn.execute("UPDATE log_entries SET user_id = ? WHERE user_id IS NULL", (user_id,))
+    conn.execute("INSERT OR IGNORE INTO user_foods (user_id, food_id) SELECT DISTINCT ?, food_id FROM log_entries "
+                 "WHERE user_id = ?", (user_id, user_id))
     for r in conn.execute("SELECT key, value FROM settings WHERE key LIKE 'target_%'").fetchall():
         if r["value"]:
             conn.execute("INSERT OR REPLACE INTO user_targets (user_id, nutrient, value) VALUES (?, ?, ?)",
@@ -256,6 +299,7 @@ def delete_user(conn: sqlite3.Connection, user_id: int) -> None:
     with conn:
         conn.execute("DELETE FROM log_entries WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM user_targets WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM user_foods WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM shares WHERE owner_id = ? OR viewer_id = ?", (user_id, user_id))
         conn.execute("UPDATE foods SET created_by = NULL WHERE created_by = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
@@ -276,6 +320,7 @@ def delete_food(conn: sqlite3.Connection, food_id: int) -> bool:
     if conn.execute("SELECT 1 FROM log_entries WHERE food_id = ? LIMIT 1", (food_id,)).fetchone():
         return False
     with conn:
+        conn.execute("DELETE FROM user_foods WHERE food_id = ?", (food_id,))
         conn.execute("DELETE FROM foods WHERE id = ?", (food_id,))
     return True
 

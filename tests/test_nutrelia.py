@@ -236,15 +236,38 @@ def test_people_have_separate_logs(tmp_path, monkeypatch):
     assert priya.post(f"/entry/{entry}/update", data={"delete": "1"}).status_code == 404
 
 
-def test_original_foods_rank_before_mine_before_others(conn):
+def test_my_foods_answer_first_then_the_public_list(conn):
     me = db.create_user(conn, "Me", "me", "pw1234")
     other = db.create_user(conn, "Other", "other", "pw1234")
     n = {"calories": 100, "carbs": 1, "fat": 1, "protein": 1}
     db.upsert_food(conn, "Egg white", "100 g", n, source="manual", created_by=other)
+    # nothing of mine matches: the public list, original foods before ones people added, and I choose
+    m = matching.match_line(conn, "egg white", user_id=me)
+    assert m.public and m.status == "choose"
+    assert [o["created_by"] for o in m.options] == [None, other]
+    # once a food is mine it answers alone, and a single clear match is picked automatically
     db.upsert_food(conn, "Egg white", "1 cup", n, source="manual", created_by=me)
-    opts = matching.match_line(conn, "egg white", user_id=me).options
-    assert [o["tier"] for o in opts] == [0, 1, 2]
-    assert [o["created_by"] for o in opts] == [None, me, other]
+    m = matching.match_line(conn, "egg white", user_id=me)
+    assert not m.public and m.status == "auto" and [o["created_by"] for o in m.options] == [me]
+    # removing it from my list sends me back to the public list; logging adds a food to the list
+    mine = m.options[0]["id"]
+    db.remove_from_my_foods(conn, me, mine)
+    assert matching.match_line(conn, "egg white", user_id=me).public
+    original = conn.execute("SELECT id FROM foods WHERE name = 'Egg white' AND created_by IS NULL").fetchone()[0]
+    db.add_entry(conn, me, "2026-02-01", "Lunch", original, 3)
+    assert db.my_food_ids(conn, me) == {original}
+
+
+def test_existing_people_start_with_what_they_logged(tmp_path):
+    c = db.connect(str(tmp_path / "t.db"))
+    db.import_entries(c, parse_text(SAMPLE))
+    uid = db.create_user(c, "santhosh", "Santhosh", "pw1234", is_admin=True)
+    c.execute("DELETE FROM user_foods")
+    c.execute("DELETE FROM settings WHERE key = 'my_foods_seeded'")
+    c.commit()
+    c = db.connect(str(tmp_path / "t.db"))  # an older database is upgraded on open
+    logged = {r[0] for r in c.execute("SELECT DISTINCT food_id FROM log_entries")}
+    assert db.my_food_ids(c, uid) == logged
 
 
 def test_sharing_a_diary(tmp_path, monkeypatch):

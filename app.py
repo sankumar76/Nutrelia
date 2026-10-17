@@ -245,14 +245,38 @@ def update_entry(entry_id):
 @login_required
 def foods():
     q = request.args.get("q", "").strip()
+    show = "all" if request.args.get("show") == "all" else "mine"
     conn = get_db()
-    if q:
-        rows = conn.execute(
-            "SELECT * FROM foods WHERE name LIKE ? ORDER BY name COLLATE NOCASE, times_logged DESC", (f"%{q}%",)
-        ).fetchall()
+    uid = g.user["id"]
+    rows = conn.execute(
+        f"""SELECT f.*, u.name AS creator_name, (m.user_id IS NOT NULL) AS in_mine
+            FROM foods f LEFT JOIN users u ON u.id = f.created_by
+            LEFT JOIN user_foods m ON m.food_id = f.id AND m.user_id = ?
+            WHERE f.name LIKE ? {"AND m.user_id IS NOT NULL" if show == "mine" else ""}
+            ORDER BY f.name COLLATE NOCASE, f.times_logged DESC""",
+        (uid, f"%{q}%"),
+    ).fetchall()
+    counts = conn.execute("SELECT COUNT(*), (SELECT COUNT(*) FROM user_foods WHERE user_id = ?) FROM foods",
+                          (uid,)).fetchone()
+    return render_template("foods.html", rows=rows, q=q, show=show, all_count=counts[0], mine_count=counts[1])
+
+
+@app.post("/foods/<int:food_id>/mine")
+@login_required
+def toggle_my_food(food_id):
+    conn = get_db()
+    food = conn.execute("SELECT name FROM foods WHERE id = ?", (food_id,)).fetchone()
+    if not food:
+        abort(404)
+    if request.form.get("action") == "remove":
+        db.remove_from_my_foods(conn, g.user["id"], food_id)
+        flash(f"Removed {food['name']} from My foods.")
     else:
-        rows = conn.execute("SELECT * FROM foods ORDER BY name COLLATE NOCASE, times_logged DESC").fetchall()
-    return render_template("foods.html", rows=rows, q=q)
+        with conn:
+            db.add_to_my_foods(conn, g.user["id"], food_id)
+        flash(f"Added {food['name']} to My foods.")
+    back = request.form.get("back", "")
+    return redirect(back if back.startswith("/") and not back.startswith("//") else url_for("foods"))
 
 
 def form_nutrients() -> dict:
@@ -306,7 +330,9 @@ def edit_food(food_id):
         db.update_food(conn, food_id, name, serving.amount, serving.unit, form_nutrients())
         flash(f"Saved {name}.")
         return redirect(url_for("foods", q=name))
-    return render_template("food_edit.html", food=food, serving=db.serving_label(food), editable=can_edit_food(food))
+    in_mine = food["id"] in db.my_food_ids(get_db(), g.user["id"])
+    return render_template("food_edit.html", food=food, serving=db.serving_label(food), editable=can_edit_food(food),
+                           in_mine=in_mine)
 
 
 @app.route("/foods/import", methods=["GET", "POST"])

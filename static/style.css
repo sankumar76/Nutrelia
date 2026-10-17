@@ -298,3 +298,15 @@ fieldset.match { border: 1px solid var(--line); min-width: 0; }
 /* People admin tools */
 .person-tools { padding: 0 2px 12px 52px; }
 .person-tools summary { cursor: pointer; color: var(--muted); font-size: .88rem; margin-bottom: 8px; }
+
+/* Foods: My foods / Public list tabs */
+.segmented.tabs { grid-template-columns: 1fr 1fr; }
+.segmented.tabs a { text-align: center; padding: 9px 4px; border-radius: 11px; font-size: .9rem; font-weight: 650; color: var(--muted); }
+.segmented.tabs a:hover { text-decoration: none; color: var(--text); }
+.segmented.tabs a.on { background: var(--surface); color: var(--accent); box-shadow: 0 1px 4px rgba(0, 0, 0, .08); }
+.segmented.tabs small { font-weight: 500; opacity: .75; margin-left: 4px; }
+.food-row { display: flex; align-items: center; gap: 4px; }
+.food-row > a.item { flex: 1; min-width: 0; }
+button.icon.add { color: var(--accent); background: var(--accent-soft); }
+button.icon.add:hover { background: var(--accent); color: #fff; }
+button.icon.on { color: var(--accent); }

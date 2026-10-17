@@ -3,26 +3,42 @@
 {% block title %}Foods · Nutrelia{% endblock %}
 {% block content %}
 <div class="page-head">
-  <div><span class="eyebrow">Shared library</span><h1>Foods <span class="muted" style="font-weight:500">{{ rows|length }}</span></h1></div>
+  <div><span class="eyebrow">Food library</span><h1>Foods</h1></div>
 </div>
 <div class="actions">
   <a class="btn" href="{{ url_for('new_food') }}">{{ icon('plus') }}New food</a>
   <a class="btn outline" href="{{ url_for('import_foods') }}">{{ icon('upload') }}Add from MyFitnessPal</a>
 </div>
+<div class="segmented tabs" role="tablist">
+  <a role="tab" class="{{ 'on' if show == 'mine' }}" href="{{ url_for('foods', q=q or None) }}">My foods <small>{{ mine_count }}</small></a>
+  <a role="tab" class="{{ 'on' if show == 'all' }}" href="{{ url_for('foods', show='all', q=q or None) }}">Public list <small>{{ all_count }}</small></a>
+</div>
 <section class="card">
+  <p class="muted" style="margin-top:0">{% if show == 'mine' %}Your own foods. When you log, Nutrelia looks here first.{% else %}Every food in Nutrelia. Tap + to add one to My foods.{% endif %}</p>
   <form method="get" class="search" role="search">
     {{ icon('search') }}
-    <input type="search" name="q" value="{{ q }}" placeholder="Search foods" aria-label="Search foods" onchange="this.form.submit()">
+    {% if show == 'all' %}<input type="hidden" name="show" value="all">{% endif %}
+    <input type="search" name="q" value="{{ q }}" placeholder="Search {{ 'my foods' if show == 'mine' else 'all foods' }}" aria-label="Search foods" onchange="this.form.submit()">
   </form>
   {% if rows %}
   <ul class="list">
     {% for r in rows %}
-    <li><a class="item" href="{{ url_for('edit_food', food_id=r.id) }}">
+    <li class="food-row"><a class="item" href="{{ url_for('edit_food', food_id=r.id) }}">
       <span class="grow"><b>{{ r.name }} {{ origin(r, user.id) }}</b><small>per {{ r.base_amount|qty }} {{ r.unit }} · {{ dots(r) }}</small></span>
       <span class="right">{{ kcal(r.calories) }}<small>kcal</small></span>
-    </a></li>
+    </a>
+    <form method="post" action="{{ url_for('toggle_my_food', food_id=r.id) }}">
+      <input type="hidden" name="back" value="{{ request.full_path }}">
+      {% if r.in_mine %}
+        <button class="icon {{ 'on' if show == 'all' }}" name="action" value="remove" title="Remove from My foods" aria-label="Remove {{ r.name }} from My foods">{{ icon('check' if show == 'all' else 'x') }}</button>
+      {% else %}
+        <button class="icon add" name="action" value="add" title="Add to My foods" aria-label="Add {{ r.name }} to My foods">{{ icon('plus') }}</button>
+      {% endif %}
+    </form></li>
     {% endfor %}
   </ul>
-  {% else %}<p class="empty">No foods match “{{ q }}”.</p>{% endif %}
+  {% elif show == 'mine' and not q %}
+    <p class="empty">Your list is empty. Foods you log join it automatically, or pick some from the <a href="{{ url_for('foods', show='all') }}">public list</a>.</p>
+  {% else %}<p class="empty">No foods match “{{ q }}”.{% if show == 'mine' %} <a href="{{ url_for('foods', show='all', q=q) }}">Search the public list</a>{% endif %}</p>{% endif %}
 </section>
 {% endblock %}

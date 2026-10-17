@@ -38,6 +38,7 @@ class LineMatch:
     request: Request
     options: list[dict] = field(default_factory=list)  # best first; each has amount + totals
     status: str = "none"  # "auto" (one clear match), "choose" (ask), "weak" (only loose guesses), "none"
+    public: bool = False  # options come from the public list, not the person's own foods
 
     @property
     def query(self) -> str:
@@ -108,18 +109,23 @@ def _score(query: str, food) -> float:
 
 
 def food_tier(food, user_id: int | None) -> int:
-    """0: the original MFP library, 1: foods you added, 2: foods other people added."""
-    if food["created_by"] is None and food["source"] == "mfp":
+    """0: your own food list, then the public list: 1 the original MFP library, 2 foods people added."""
+    if _in_mine(food):
         return 0
-    if user_id is not None and food["created_by"] == user_id:
+    if food["created_by"] is None and food["source"] == "mfp":
         return 1
     return 2
+
+
+def _in_mine(food) -> bool:
+    return "in_mine" in food.keys() and bool(food["in_mine"])
 
 
 def _option(food, req: Request, score: float, user_id: int | None) -> dict:
     amount, unit_fits = amount_for(food, req)
     return dict(food) | {
         "tier": food_tier(food, user_id),
+        "mine": _in_mine(food),
         "score": round(min(score, 100)),
         "amount": round(amount, 2),
         "unit_fits": unit_fits,
@@ -130,7 +136,7 @@ def _option(food, req: Request, score: float, user_id: int | None) -> dict:
 
 def match_line(conn: sqlite3.Connection, line: str, foods: list | None = None, user_id: int | None = None) -> LineMatch:
     req = parse_request(line)
-    foods = foods if foods is not None else conn.execute("SELECT * FROM foods").fetchall()
+    foods = foods if foods is not None else _foods(conn, user_id)
     scored = [(s, f) for f in foods if (s := _score(req.query, f)) >= MIN_SCORE]
     if not scored and req.unit:
         # the "unit" may really be part of the name ("2 eggs" -> unit "eggs")
@@ -143,21 +149,33 @@ def match_line(conn: sqlite3.Connection, line: str, foods: list | None = None, u
     top = max(s for s, _ in scored)
     keep = [(s, f) for s, f in scored if s >= max(MIN_SCORE, top - 8)]
     opts = [_option(f, req, s, user_id) for s, f in keep]
-    # original foods first, then yours, then other people's; within each, best name, a unit that
-    # fits what was typed, and most logged
+    # Your own foods answer first. Only when none of them is among the best matches does the
+    # public list come in, and then you always choose (original foods before ones people added).
+    # Within each, best name, a unit that fits what was typed, and most logged.
+    mine = [o for o in opts if o["mine"]]
+    result.public = not mine
+    opts = mine or opts
     opts.sort(key=lambda o: (o["tier"], -o["score"], not o["unit_fits"], -(o["times_logged"] or 0)))
     result.options = opts[:12]
-    if top < WEAK_SCORE:
+    best = max(o["score"] for o in opts)
+    if best < WEAK_SCORE:
         result.status = "weak"
-    elif len(result.options) == 1 and top >= AUTO_PICK_SCORE:
+    elif len(result.options) == 1 and best >= AUTO_PICK_SCORE and not result.public:
         result.status = "auto"
     else:
         result.status = "choose"
     return result
 
 
-def match_text(conn: sqlite3.Connection, text: str, user_id: int | None = None) -> list[LineMatch]:
-    foods = conn.execute(
-        "SELECT f.*, u.name AS creator_name FROM foods f LEFT JOIN users u ON u.id = f.created_by"
+def _foods(conn: sqlite3.Connection, user_id: int | None) -> list:
+    return conn.execute(
+        """SELECT f.*, u.name AS creator_name, (? IS NULL OR m.user_id IS NOT NULL) AS in_mine
+           FROM foods f LEFT JOIN users u ON u.id = f.created_by
+           LEFT JOIN user_foods m ON m.food_id = f.id AND m.user_id = ?""",
+        (user_id, user_id),
     ).fetchall()
+
+
+def match_text(conn: sqlite3.Connection, text: str, user_id: int | None = None) -> list[LineMatch]:
+    foods = _foods(conn, user_id)
     return [match_line(conn, line, foods, user_id) for line in split_lines(text)]
