@@ -35,9 +35,9 @@
     --accent-2: #5fdcaa;
     --accent-soft: #173327;
     --accent-ink: #062016;
-    --carbs: #f2b440;
-    --fat: #f27a90;
-    --protein: #8c92ff;
+    --carbs: #c08419;
+    --fat: #d4566e;
+    --protein: #757cf0;
     --fiber: #45c99b;
     --warn: #f2b45a;
     --warn-soft: #36290f;
@@ -337,3 +337,64 @@ h2.section { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
 .stats div { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; }
 .stats b { display: block; font-size: 1.2rem; }
 .stats small { color: var(--muted); }
+
+/* Day page: Table / Meals switch */
+.view-switch { grid-template-columns: 1fr 1fr; max-width: 260px; margin: 0 auto 14px; }
+.view-switch button { background: none; box-shadow: none; color: var(--muted); padding: 8px; border-radius: 11px; font-weight: 650; font-size: .9rem; }
+.view-switch button:hover { color: var(--text); background: none; }
+.view-switch button.on { background: var(--surface); color: var(--accent); box-shadow: 0 1px 4px rgba(0, 0, 0, .08); }
+body[data-view="table"] .view-cards, body[data-view="cards"] .view-table { display: none; }
+body:not([data-view]) .view-cards { display: none; }
+
+/* Nutrition table, MyFitnessPal style */
+.card.nutri { padding: 6px 0 4px; }
+.nutri-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.nutri-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: .88rem; }
+.nutri-table th, .nutri-table td { padding: 8px 6px; text-align: right; white-space: nowrap; }
+.nutri-table .food-col { text-align: left; white-space: normal; min-width: 130px; padding-left: 16px; position: sticky; left: 0; background: var(--surface); z-index: 1; }
+.nutri-table thead th { font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; vertical-align: bottom; padding-top: 10px; }
+.nutri-table thead th small { display: block; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.nutri-table td.food-col small { display: block; color: var(--muted); font-size: .76rem; margin-top: 1px; }
+.nutri-table tr.entry td { border-top: 1px solid var(--line); }
+.nutri-table tr.meal-row th { text-align: left; padding: 16px 16px 6px; position: static; }
+.nutri-table .meal-name { display: inline-flex; align-items: center; gap: 8px; font-size: 1rem; font-weight: 700; color: var(--text); }
+.nutri-table .meal-name svg.i { color: var(--accent); }
+.nutri-table tr.meal-row .add-link { float: right; font-size: .82rem; }
+.nutri-table tr.subtotal td { font-weight: 700; color: var(--accent); border-top: 1px solid var(--line); background: var(--surface-2); }
+.nutri-table tr.subtotal td.food-col { background: var(--surface-2); font-size: .8rem; }
+.nutri-table tfoot tr:first-child > * { border-top: 2px solid var(--text); }
+.nutri-table tfoot th { font-weight: 700; color: var(--text); }
+.nutri-table tfoot th a { font-weight: 500; font-size: .78rem; margin-left: 6px; }
+.nutri-table tr.totals td { font-weight: 800; font-size: .95rem; }
+.nutri-table tr.goal td { color: var(--muted); }
+.nutri-table tr.remaining td.left { color: var(--accent); font-weight: 700; }
+.nutri-table tr.remaining td.over { color: var(--bad); font-weight: 700; }
+.nutri-table .x-col { width: 34px; padding: 0 8px 0 0; }
+.nutri-table .x-col button.icon { padding: 5px; }
+.nutri-table .n-calories, .nutri-table td:nth-child(2) { font-weight: 650; }
+
+/* Calories from macros */
+.split-row { display: grid; grid-template-columns: 48px 1fr; align-items: center; gap: 10px; margin-bottom: 10px; }
+.split-label { font-size: .8rem; font-weight: 650; color: var(--muted); }
+.split-bar { display: flex; gap: 2px; height: 26px; }
+.split-bar .seg { display: flex; align-items: center; justify-content: center; min-width: 4px; color: #fff; font-size: .75rem; font-weight: 700; }
+.split-bar .seg:first-child { border-radius: 6px 0 0 6px; } .split-bar .seg:last-child { border-radius: 0 6px 6px 0; }
+.split-bar .seg:only-child { border-radius: 6px; }
+.seg.carbs, .sw.carbs { background: var(--carbs); } .seg.fat, .sw.fat { background: var(--fat); } .seg.protein, .sw.protein { background: var(--protein); }
+.split-legend { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .88rem; }
+.split-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+.card.nutri { overflow: hidden; min-width: 0; }
+.nutri-table .short { display: none; }
+@media (max-width: 560px) {
+  .nutri-table { font-size: .8rem; }
+  .nutri-table th, .nutri-table td { padding: 7px 3px; }
+  .nutri-table .food-col { min-width: 0; padding-left: 12px; word-break: break-word; }
+  .nutri-table td.food-col small { font-size: .7rem; }
+  .nutri-table thead th { font-size: .64rem; letter-spacing: 0; }
+  .nutri-table .long { display: none; } .nutri-table .short { display: inline; }
+  .nutri-table .x-col { width: 26px; padding-right: 4px; }
+  .nutri-table .x-col button.icon { padding: 3px; }
+  .nutri-table .x-col svg.i { width: 14px; height: 14px; }
+  .nutri-table tr.meal-row th { padding: 14px 12px 4px; }
+  .nutri-table tfoot th a { display: block; margin: 0; }
+}

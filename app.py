@@ -134,6 +134,18 @@ def qty(value):
     return fmt_amount(value) if value is not None else ""
 
 
+NUTRI_COLS = [("calories", "Calories", "kcal"), ("carbs", "Carbs", "g"), ("fat", "Fat", "g"),
+              ("protein", "Protein", "g"), ("fiber", "Fiber", "g"), ("sugar", "Sugar", "g")]
+
+
+@app.template_filter("whole")
+def whole_filter(value, blank="–"):
+    """A nutrient value as a whole number, with thousands separators: 1,015."""
+    if value is None:
+        return blank
+    return f"{round(value):,}"
+
+
 @app.template_filter("cap")
 def cap_filter(text) -> str:
     """Show a word with a capital first letter; usernames sign in either way."""
@@ -144,7 +156,7 @@ def cap_filter(text) -> str:
 def inject():
     return {"NUTRIENTS": NUTRIENTS, "UNITS": UNITS, "MEALS": db.MEAL_ORDER, "user": g.get("user"),
             "FOOD_SOURCES": FOOD_SOURCES, "SEXES": profile.SEXES, "ACTIVITY": profile.ACTIVITY,
-            "GOALS": profile.GOALS, "today": date.today().isoformat()}
+            "GOALS": profile.GOALS, "NUTRI_COLS": NUTRI_COLS, "today": date.today().isoformat()}
 
 
 @app.route("/login", methods=["GET", "POST"])

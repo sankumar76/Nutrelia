@@ -30,6 +30,79 @@
   if (location.hash === '#add') document.querySelector('#add textarea').focus();
 </script>
 
+<div class="view-switch segmented" role="tablist" aria-label="View">
+  <button type="button" data-view="table" role="tab">Table</button>
+  <button type="button" data-view="cards" role="tab">Meals</button>
+</div>
+
+<section class="card nutri view-table">
+  <div class="nutri-scroll">
+  <table class="nutri-table">
+    <thead><tr>
+      <th class="food-col" scope="col"><span class="sr">Food</span></th>
+      {% for n, label, unit in NUTRI_COLS %}<th scope="col" class="n-{{ n }}"><span class="long">{{ label }}</span><span class="short" aria-hidden="true">{{ 'Cal' if n == 'calories' else label[:4] if n == 'protein' else label }}</span><small>{{ unit }}</small></th>{% endfor %}
+      <th class="x-col"><span class="sr">Remove</span></th>
+    </tr></thead>
+    {% for meal in MEALS %}{% set rows = by_meal[meal] %}
+    <tbody>
+      <tr class="meal-row"><th colspan="{{ NUTRI_COLS|length + 2 }}" scope="rowgroup">
+        <span class="meal-name">{{ icon(meal) }}{{ meal }}</span>
+        <a class="add-link" href="{{ url_for('day_view', day=day, meal=meal) }}#add">{{ icon('plus') }}Add food</a></th></tr>
+      {% for r in rows %}
+      <tr class="entry">
+        <td class="food-col">{{ r.name }}<small>{{ r.amount|qty }} {{ r.unit }}</small></td>
+        {% for n, _l, _u in NUTRI_COLS %}<td>{{ r.scaled[n]|whole }}</td>{% endfor %}
+        <td class="x-col"><form method="post" action="{{ url_for('update_entry', entry_id=r.entry_id) }}">
+          <button name="delete" value="1" class="icon" aria-label="Remove {{ r.name }}" title="Remove">{{ icon('x') }}</button></form></td>
+      </tr>
+      {% endfor %}
+      {% if rows %}
+      <tr class="subtotal"><td class="food-col">{{ meal }} total</td>
+        {% for n, _l, _u in NUTRI_COLS %}<td>{{ meal_totals[meal][n]|whole }}</td>{% endfor %}<td></td></tr>
+      {% endif %}
+    </tbody>
+    {% endfor %}
+    <tfoot>
+      <tr class="totals"><th class="food-col" scope="row">Totals</th>
+        {% for n, _l, _u in NUTRI_COLS %}<td>{{ day_totals[n]|whole(0) }}</td>{% endfor %}<td></td></tr>
+      <tr class="goal"><th class="food-col" scope="row">Your daily goal <a href="{{ url_for('targets', back=request.path) }}">Edit</a></th>
+        {% for n, _l, _u in NUTRI_COLS %}<td>{{ targets[n]|whole if targets[n] else '–' }}</td>{% endfor %}<td></td></tr>
+      <tr class="remaining"><th class="food-col" scope="row">Remaining</th>
+        {% for n, _l, _u in NUTRI_COLS %}{% if targets[n] %}{% set left = targets[n] - (day_totals[n] or 0) %}
+          <td class="{{ 'over' if left < 0 else 'left' }}">{{ left|whole }}</td>{% else %}<td>–</td>{% endif %}{% endfor %}<td></td></tr>
+    </tfoot>
+  </table>
+  </div>
+</section>
+
+{% set kc, kf, kp = (day_totals.carbs or 0) * 4, (day_totals.fat or 0) * 9, (day_totals.protein or 0) * 4 %}
+{% set ksum = kc + kf + kp %}
+{% if ksum %}
+<section class="card macro-split view-table">
+  <div class="card-head"><h2>Calories from carbs, fat and protein</h2></div>
+  {% macro split_bar(label, c, f, p) -%}
+    {% set tot = c + f + p %}
+    <div class="split-row">
+      <span class="split-label">{{ label }}</span>
+      <div class="split-bar" role="img" aria-label="{{ label }}: carbs {{ (100 * c / tot)|round|int }}%, fat {{ (100 * f / tot)|round|int }}%, protein {{ (100 * p / tot)|round|int }}%">
+        {% for key, v in [('carbs', c), ('fat', f), ('protein', p)] %}{% if v %}
+          <span class="seg {{ key }}" style="flex-grow: {{ v }}" title="{{ key|capitalize }}: {{ (100 * v / tot)|round|int }}% of calories">{% if 100 * v / tot >= 12 %}{{ (100 * v / tot)|round|int }}%{% endif %}</span>
+        {% endif %}{% endfor %}
+      </div>
+    </div>
+  {%- endmacro %}
+  {{ split_bar('Today', kc, kf, kp) }}
+  {% if targets.carbs and targets.fat and targets.protein %}{{ split_bar('Goal', targets.carbs * 4, targets.fat * 9, targets.protein * 4) }}{% endif %}
+  <ul class="split-legend">
+    {% for key, label, v, g in [('carbs', 'Carbs', kc, day_totals.carbs), ('fat', 'Fat', kf, day_totals.fat), ('protein', 'Protein', kp, day_totals.protein)] %}
+      <li><i class="sw {{ key }}"></i>{{ label }} <b>{{ (100 * v / ksum)|round|int }}%</b> <span class="muted">{{ g|whole(0) }} g</span>
+        {% if targets.carbs and targets.fat and targets.protein %}{% set gt = targets.carbs * 4 + targets.fat * 9 + targets.protein * 4 %}<span class="muted">· goal {{ (100 * (targets[key] * (9 if key == 'fat' else 4)) / gt)|round|int }}%</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<div class="view-cards">
 {% for meal in MEALS %}{% set rows = by_meal[meal] %}
 <section class="card">
   <div class="card-head">
@@ -61,6 +134,24 @@
   {% else %}<p class="empty">Nothing logged yet.</p>{% endif %}
 </section>
 {% endfor %}
+
+</div>
+<script>
+  (function () {  // Table or Meals view, remembered on this device
+    var view = 'table';
+    try { view = localStorage.getItem('nutrelia-view') || 'table'; } catch (e) {}
+    function show(v) {
+      document.body.dataset.view = v;
+      document.querySelectorAll('.view-switch button').forEach(function (b) {
+        b.classList.toggle('on', b.dataset.view === v); b.setAttribute('aria-selected', b.dataset.view === v);
+      });
+    }
+    document.querySelectorAll('.view-switch button').forEach(function (b) {
+      b.addEventListener('click', function () { show(b.dataset.view); try { localStorage.setItem('nutrelia-view', b.dataset.view); } catch (e) {} });
+    });
+    show(view);
+  })();
+</script>
 
 <details class="card">
   <summary>{{ icon('copy') }}Copy another day into this one</summary>
