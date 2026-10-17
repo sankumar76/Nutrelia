@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, kcal, dots %}
+{% block title %}Public list · Nutrelia{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><span class="eyebrow">Admin</span><h1>Public food list</h1></div>
+  <a class="btn outline" href="{{ url_for('foods', show='all') }}">Browse it</a>
+</div>
+<p class="muted">Everyone can use these foods. Foods people add themselves stay private to them; you can move any food onto this list from its page.</p>
+
+<section class="card">
+  <ul class="list">
+    {% for key, label in FOOD_SOURCES.items() %}
+    <li><a class="item" href="{{ url_for('foods', show='all', source=key) }}"><span class="chip gray src-{{ key }}">{{ label }}</span><span class="grow"></span><span class="right">{{ counts.get(key, 0) }}<small>foods</small></span></a></li>
+    {% endfor %}
+    {% set other = counts.items()|rejectattr(0, 'in', FOOD_SOURCES)|map(attribute=1)|sum %}
+    <li><a class="item" href="{{ url_for('foods', show='all') }}"><span class="chip gray">Added by you</span><span class="grow"></span><span class="right">{{ other }}<small>foods</small></span></a></li>
+  </ul>
+  <div class="row" style="margin-top:10px"><a class="btn" href="{{ url_for('new_food', public=1) }}">{{ icon('plus') }} New public food</a></div>
+</section>
+
+<form method="post" enctype="multipart/form-data" class="card">
+  <div class="card-head"><h2>Indian Nutrient Databank (INDB)</h2></div>
+  <ol class="steps">
+    <li>Download the INDB Excel file from <a href="https://www.anuvaad.org.in/indian-nutrient-databank/" target="_blank" rel="noopener">anuvaad.org.in</a>.</li>
+    <li>Choose it here. Values are per 100 g.</li>
+  </ol>
+  <input type="hidden" name="action" value="indb">
+  <label>INDB file (.xlsx or .csv) <input type="file" name="file" accept=".xlsx,.csv" required></label>
+  <button class="btn">{{ icon('upload') }} Load INDB</button>
+</form>
+
+<form method="post" enctype="multipart/form-data" class="card">
+  <div class="card-head"><h2>USDA FoodData Central</h2></div>
+  <ol class="steps">
+    <li>On <a href="https://fdc.nal.usda.gov/download-datasets" target="_blank" rel="noopener">fdc.nal.usda.gov</a>, download <b>SR Legacy</b> and/or <b>Foundation Foods</b> as <b>CSV</b>.</li>
+    <li>Choose the .zip here (one at a time). Values are per 100 g.</li>
+  </ol>
+  <input type="hidden" name="action" value="usda">
+  <label>USDA download (.zip) <input type="file" name="file" accept=".zip" required></label>
+  <button class="btn">{{ icon('upload') }} Load USDA</button>
+</form>
+
+<section class="card">
+  <div class="card-head"><h2>Open Food Facts</h2></div>
+  <p class="muted" style="margin-top:0">Search packaged products and add the ones you want. Values are per 100 g.</p>
+  <form method="get" class="row">
+    <input type="search" name="off_q" value="{{ query }}" placeholder="e.g. Haldiram bhujia" required>
+    <label class="row" style="margin:0;gap:6px;font-weight:500"><input type="checkbox" name="india" value="1" {% if india %}checked{% endif %} style="width:auto"> Sold in India</label>
+    <button class="btn outline">{{ icon('search') }} Search</button>
+  </form>
+  {% if query %}
+    {% if results %}
+    <form method="post" style="margin-top:14px">
+      <input type="hidden" name="action" value="off_add"><input type="hidden" name="off_q" value="{{ query }}">
+      <ul class="list">
+      {% for f in results %}
+        <li><label class="item" style="margin:0;cursor:pointer">
+          <input type="checkbox" name="product" value="{{ as_json(f) }}" style="width:auto">
+          <span class="grow"><b>{{ f.name }}</b><small>per 100 g · {{ dots(f.nutrients) }}</small></span>
+          <span class="right">{{ kcal(f.nutrients.calories) }}<small>kcal</small></span>
+        </label></li>
+      {% endfor %}
+      </ul>
+      <button class="btn">{{ icon('plus') }} Add selected to the public list</button>
+    </form>
+    {% else %}<p class="empty">No products with nutrition found for “{{ query }}”.</p>{% endif %}
+  {% endif %}
+  <p class="muted"><small>To load every Open Food Facts product sold in India at once, run <code>python scripts/load_public_foods.py --off-country india</code> in a Bash console.</small></p>
+</section>
+<p class="muted"><small>Open Food Facts data is © Open Food Facts contributors, under the Open Database License. INDB is from Anuvaad Solutions. USDA FoodData Central is public domain.</small></p>
+{% endblock %}

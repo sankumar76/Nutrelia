@@ -12,9 +12,9 @@
 {%- endmacro %}
 
 {% macro origin(f, me) -%}
-  {% if f.created_by is none and f.source == 'mfp' %}<span class="chip gray">Original</span>
-  {% elif f.created_by == me %}<span class="chip mine">Mine</span>
-  {% elif f.creator_name %}<span class="chip warn">{{ f.creator_name }}</span>
+  {% if not f.is_public %}{% if f.created_by == me %}<span class="chip mine">Mine</span>{% elif f.creator_name %}<span class="chip warn">{{ f.creator_name }}</span>{% endif %}
+  {% elif f.source in FOOD_SOURCES %}<span class="chip gray src-{{ f.source }}">{{ FOOD_SOURCES[f.source] }}</span>
+  {% else %}<span class="chip gray">Public</span>
   {% endif %}
 {%- endmacro %}
 

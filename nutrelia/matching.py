@@ -5,7 +5,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 
-from rapidfuzz import fuzz
+from rapidfuzz import fuzz, process
 
 from .db import scale, serving_label
 from .units import _NUMBER, canonical_unit, convert, count_unit, to_number
@@ -99,22 +99,38 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^\w\s.]", " ", s.lower())).strip()
 
 
-def _score(query: str, food) -> float:
-    q = _norm(query)
-    name = _norm(food["name"])
-    short = _norm(food["name"].split(" - ", 1)[-1])  # "Onion - Onion": compare without the brand too
-    if q in (name, short) or q.rstrip("s") in (name, short):
-        return 101  # exact name always wins
-    return max(fuzz.WRatio(q, name), fuzz.WRatio(q, short))
+# the public list in order of preference: the original MFP foods, then the Indian Nutrient
+# Databank, USDA FoodData Central, Open Food Facts, and anything else the admin made public
+PUBLIC_ORDER = {"mfp": 1, "indb": 2, "usda": 3, "off": 4}
+
+
+class FoodIndex:
+    """Foods with their names normalised once, so each typed line is scored against all of them quickly."""
+
+    def __init__(self, foods: list):
+        self.foods = foods
+        self.names = [_norm(f["name"]) for f in foods]
+        self.shorts = [_norm(f["name"].split(" - ", 1)[-1]) for f in foods]
+
+    def scored(self, query: str) -> list[tuple[float, object]]:
+        q = _norm(query)
+        if not q:
+            return []
+        best: dict[int, float] = {}
+        for names in (self.names, self.shorts):
+            for _, score, i in process.extract(q, names, scorer=fuzz.WRatio, score_cutoff=MIN_SCORE, limit=None):
+                best[i] = max(best.get(i, 0), score)
+        for i, (name, short) in enumerate(zip(self.names, self.shorts)):
+            if q in (name, short) or q.rstrip("s") in (name, short):
+                best[i] = 101  # exact name always wins
+        return [(score, self.foods[i]) for i, score in best.items()]
 
 
 def food_tier(food, user_id: int | None) -> int:
-    """0: your own food list, then the public list: 1 the original MFP library, 2 foods people added."""
+    """0: your own food list, then the public list in PUBLIC_ORDER."""
     if _in_mine(food):
         return 0
-    if food["created_by"] is None and food["source"] == "mfp":
-        return 1
-    return 2
+    return PUBLIC_ORDER.get(food["source"], 5)
 
 
 def _in_mine(food) -> bool:
@@ -134,15 +150,17 @@ def _option(food, req: Request, score: float, user_id: int | None) -> dict:
     }
 
 
-def match_line(conn: sqlite3.Connection, line: str, foods: list | None = None, user_id: int | None = None) -> LineMatch:
+def match_line(conn: sqlite3.Connection, line: str, foods: list | FoodIndex | None = None,
+               user_id: int | None = None) -> LineMatch:
     req = parse_request(line)
     foods = foods if foods is not None else _foods(conn, user_id)
-    scored = [(s, f) for f in foods if (s := _score(req.query, f)) >= MIN_SCORE]
+    index = foods if isinstance(foods, FoodIndex) else FoodIndex(foods)
+    scored = index.scored(req.query)
     if not scored and req.unit:
         # the "unit" may really be part of the name ("2 eggs" -> unit "eggs")
         req = Request(f"{req.query} {req.unit}" if _TRAILING.match(line) else f"{req.unit} {req.query}", req.number)
         req.query = req.query.strip()
-        scored = [(s, f) for f in foods if (s := _score(req.query, f)) >= MIN_SCORE]
+        scored = index.scored(req.query)
     result = LineMatch(text=line, request=req)
     if not scored:
         return result
@@ -168,14 +186,16 @@ def match_line(conn: sqlite3.Connection, line: str, foods: list | None = None, u
 
 
 def _foods(conn: sqlite3.Connection, user_id: int | None) -> list:
+    """Foods this person can match: their own list and the public list (everything when there's no user)."""
     return conn.execute(
-        """SELECT f.*, u.name AS creator_name, (? IS NULL OR m.user_id IS NOT NULL) AS in_mine
+        """SELECT f.*, u.name AS creator_name, (:uid IS NULL OR m.user_id IS NOT NULL) AS in_mine
            FROM foods f LEFT JOIN users u ON u.id = f.created_by
-           LEFT JOIN user_foods m ON m.food_id = f.id AND m.user_id = ?""",
-        (user_id, user_id),
+           LEFT JOIN user_foods m ON m.food_id = f.id AND m.user_id = :uid
+           WHERE :uid IS NULL OR m.user_id IS NOT NULL OR f.is_public = 1 OR f.created_by = :uid""",
+        {"uid": user_id},
     ).fetchall()
 
 
 def match_text(conn: sqlite3.Connection, text: str, user_id: int | None = None) -> list[LineMatch]:
-    foods = _foods(conn, user_id)
+    foods = FoodIndex(_foods(conn, user_id))
     return [match_line(conn, line, foods, user_id) for line in split_lines(text)]

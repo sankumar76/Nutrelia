@@ -13,6 +13,10 @@
         <input type="number" step="any" min="0" name="{{ n }}" value="{{ form.get(n, '') }}" inputmode="decimal" {% if n == 'calories' %}required{% endif %}></label>
     {% endfor %}
     </div>
+    {% if user.is_admin %}
+      <label class="toggle-row"><span class="grow">Add to the public list<br><small class="muted">Everyone can use it. Otherwise it's private to you.</small></span>
+        <input type="checkbox" name="public" value="1" class="switch" {% if form.get('public') %}checked{% endif %}></label>
+    {% else %}<p class="muted">This food is private: only you will see it.</p>{% endif %}
     {% if form.get('day') %}
       <input type="hidden" name="day" value="{{ form.get('day') }}">
       <div class="grid">

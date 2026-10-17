@@ -4,7 +4,7 @@
 <div class="narrow">
   <div class="page-head"><div><div class="eyebrow">Food library</div><h1>{% if editable %}Edit food{% else %}Food details{% endif %}</h1></div>{{ origin(food, user.id) }}</div>
   <form method="post" class="card">
-    {% if not editable %}<p class="muted" style="margin-top:0">Foods are shared by everyone. Only the person who added this food, or the admin, can change it.</p>{% endif %}
+    {% if not editable %}<p class="muted" style="margin-top:0">{% if food.is_public %}This food is on the public list, which the admin looks after.{% else %}Only the person who added this food can change it.{% endif %}</p>{% endif %}
     <fieldset class="plain" {% if not editable %}disabled{% endif %}>
     <label>Name <input name="name" value="{{ food.name }}" required></label>
     <label>Nutrition below is for <small>e.g. 100 g, 1 cup, 2 slice</small>
@@ -29,6 +29,13 @@
     {% endif %}
     </div>
   </form>
+  {% if user.is_admin %}
+  <form method="post" class="card row" style="justify-content:space-between">
+    <span>{% if food.is_public %}{{ icon('check') }} On the public list{% else %}Private to {{ 'you' if food.created_by == user.id else 'the person who added it' }}{% endif %}</span>
+    {% if food.is_public %}<button class="btn ghost" name="public" value="0">Remove from public list</button>
+    {% else %}<button class="btn outline" name="public" value="1">{{ icon('plus') }} Add to public list</button>{% endif %}
+  </form>
+  {% endif %}
   <form method="post" action="{{ url_for('toggle_my_food', food_id=food.id) }}" class="card row" style="justify-content:space-between">
     <input type="hidden" name="back" value="{{ request.path }}">
     <span>{% if in_mine %}{{ icon('check') }} In My foods{% else %}Not in My foods{% endif %}</span>

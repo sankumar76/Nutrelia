@@ -310,3 +310,16 @@ fieldset.match { border: 1px solid var(--line); min-width: 0; }
 button.icon.add { color: var(--accent); background: var(--accent-soft); }
 button.icon.add:hover { background: var(--accent); color: #fff; }
 button.icon.on { color: var(--accent); }
+
+/* Public list source filter and source chips */
+.chips-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.chips-row a.chip { font-size: .8rem; padding: 5px 12px; }
+.chips-row a.chip:hover { text-decoration: none; }
+.chip.src-indb { background: #fdf0e1; color: #b0590e; }
+.chip.src-usda { background: #e6eefc; color: #2f5bb7; }
+.chip.src-off { background: #f3e8fb; color: #7a3ea8; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .chip.src-indb { background: #3a2a17; color: #f0b06a; }
+  :root:not([data-theme="light"]) .chip.src-usda { background: #1c2a45; color: #8fb0f2; }
+  :root:not([data-theme="light"]) .chip.src-off { background: #2f2140; color: #c99be9; }
+}

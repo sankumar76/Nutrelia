@@ -8,16 +8,23 @@
 <div class="actions">
   <a class="btn" href="{{ url_for('new_food') }}">{{ icon('plus') }}New food</a>
   <a class="btn outline" href="{{ url_for('import_foods') }}">{{ icon('upload') }}Add from MyFitnessPal</a>
+  {% if user.is_admin %}<a class="btn outline" href="{{ url_for('public_foods') }}">Manage public list</a>{% endif %}
 </div>
 <div class="segmented tabs" role="tablist">
   <a role="tab" class="{{ 'on' if show == 'mine' }}" href="{{ url_for('foods', q=q or None) }}">My foods <small>{{ mine_count }}</small></a>
   <a role="tab" class="{{ 'on' if show == 'all' }}" href="{{ url_for('foods', show='all', q=q or None) }}">Public list <small>{{ all_count }}</small></a>
 </div>
 <section class="card">
-  <p class="muted" style="margin-top:0">{% if show == 'mine' %}Your own foods. When you log, Nutrelia looks here first.{% else %}Every food in Nutrelia. Tap + to add one to My foods.{% endif %}</p>
+  <p class="muted" style="margin-top:0">{% if show == 'mine' %}Your own foods. When you log, Nutrelia looks here first. Foods you add stay private to you.{% else %}Foods everyone can use, from MyFitnessPal, the Indian Nutrient Databank, USDA and Open Food Facts. Tap + to add one to My foods.{% endif %}</p>
+  {% if show == 'all' %}
+  <div class="chips-row">
+    <a class="chip {{ 'mine' if not source else 'gray' }}" href="{{ url_for('foods', show='all', q=q or None) }}">All</a>
+    {% for key, label in FOOD_SOURCES.items() %}<a class="chip {{ 'mine' if source == key else 'gray' }}" href="{{ url_for('foods', show='all', source=key, q=q or None) }}">{{ label }}</a>{% endfor %}
+  </div>
+  {% endif %}
   <form method="get" class="search" role="search">
     {{ icon('search') }}
-    {% if show == 'all' %}<input type="hidden" name="show" value="all">{% endif %}
+    {% if show == 'all' %}<input type="hidden" name="show" value="all">{% if source %}<input type="hidden" name="source" value="{{ source }}">{% endif %}{% endif %}
     <input type="search" name="q" value="{{ q }}" placeholder="Search {{ 'my foods' if show == 'mine' else 'all foods' }}" aria-label="Search foods" onchange="this.form.submit()">
   </form>
   {% if rows %}
@@ -37,6 +44,7 @@
     </form></li>
     {% endfor %}
   </ul>
+  {% if total > rows|length %}<p class="muted" style="text-align:center">Showing {{ rows|length }} of {{ total }}. Search to narrow it down.</p>{% endif %}
   {% elif show == 'mine' and not q %}
     <p class="empty">Your list is empty. Foods you log join it automatically, or pick some from the <a href="{{ url_for('foods', show='all') }}">public list</a>.</p>
   {% else %}<p class="empty">No foods match “{{ q }}”.{% if show == 'mine' %} <a href="{{ url_for('foods', show='all', q=q) }}">Search the public list</a>{% endif %}</p>{% endif %}

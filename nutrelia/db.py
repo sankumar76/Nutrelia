@@ -96,6 +96,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # foods typed in before accounts existed belong to the first admin
         conn.execute("""UPDATE foods SET created_by = (SELECT MIN(id) FROM users WHERE is_admin = 1)
                         WHERE source = 'manual' AND created_by IS NULL""")
+        if "is_public" not in _columns(conn, "foods"):
+            # the public list: the original MFP foods. Foods people added become theirs alone.
+            conn.execute("ALTER TABLE foods ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0")
+            conn.execute("ALTER TABLE foods ADD COLUMN source_ref TEXT")  # id in the source database
+            conn.execute("UPDATE foods SET is_public = 1 WHERE created_by IS NULL AND source = 'mfp'")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS foods_source_ref ON foods (source, source_ref) "
+                     "WHERE source_ref IS NOT NULL")
         if not conn.execute("SELECT 1 FROM settings WHERE key = 'my_foods_seeded'").fetchone() \
                 and conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
             # before personal lists existed: everyone starts with what they logged or added
@@ -134,10 +141,14 @@ def _consistent(food, nutrients: dict, k: float) -> bool:
     return True
 
 
-def find_food(conn: sqlite3.Connection, name: str, serving: str, nutrients: dict) -> tuple[int, float] | None:
-    """An existing food this row is a resize of, and the row's amount in that food's unit."""
+def find_food(conn: sqlite3.Connection, name: str, serving: str, nutrients: dict,
+              created_by: int | None = None) -> tuple[int, float] | None:
+    """An existing food this row is a resize of, and the row's amount in that food's unit.
+    Only public foods and the person's own are considered, so nobody ends up sharing a private food."""
     s = parse_serving(serving)
-    for food in conn.execute("SELECT * FROM foods WHERE name = ? COLLATE NOCASE ORDER BY times_logged DESC, id", (name,)):
+    for food in conn.execute(
+            """SELECT * FROM foods WHERE name = ? COLLATE NOCASE AND (is_public = 1 OR created_by IS ?)
+               ORDER BY is_public DESC, times_logged DESC, id""", (name, created_by)):
         amount = convert(s.amount, s.unit, food["unit"])
         if not amount:
             continue
@@ -147,18 +158,20 @@ def find_food(conn: sqlite3.Connection, name: str, serving: str, nutrients: dict
 
 
 def upsert_food(conn: sqlite3.Connection, name: str, serving: str, nutrients: dict, source: str = "mfp",
-                created_by: int | None = None) -> tuple[int, float]:
-    """Return (food id, amount in that food's unit), creating the food if no existing one matches."""
-    found = find_food(conn, name, serving, nutrients)
+                created_by: int | None = None, public: bool | None = None) -> tuple[int, float]:
+    """Return (food id, amount in that food's unit), creating the food if no existing one matches.
+    New foods are public when nobody in particular added them (MFP imports) unless `public` says otherwise."""
+    found = find_food(conn, name, serving, nutrients, created_by)
     if found:
         if created_by is not None:
             add_to_my_foods(conn, created_by, found[0])
         return found
     s = parse_serving(serving)
     cur = conn.execute(
-        f"INSERT INTO foods (name, base_amount, unit, {', '.join(NUTRIENTS)}, source, created_by) "
-        f"VALUES (?, ?, ?, {', '.join('?' * len(NUTRIENTS))}, ?, ?)",
-        [name, s.amount, s.unit] + [nutrients.get(n) for n in NUTRIENTS] + [source, created_by],
+        f"INSERT INTO foods (name, base_amount, unit, {', '.join(NUTRIENTS)}, source, created_by, is_public) "
+        f"VALUES (?, ?, ?, {', '.join('?' * len(NUTRIENTS))}, ?, ?, ?)",
+        [name, s.amount, s.unit] + [nutrients.get(n) for n in NUTRIENTS]
+        + [source, created_by, int(created_by is None if public is None else public)],
     )
     if created_by is not None:
         add_to_my_foods(conn, created_by, cur.lastrowid)
@@ -306,6 +319,31 @@ def delete_user(conn: sqlite3.Connection, user_id: int) -> None:
         refresh_usage(conn)
 
 
+def set_public(conn: sqlite3.Connection, food_id: int, public: bool) -> None:
+    with conn:
+        conn.execute("UPDATE foods SET is_public = ? WHERE id = ?", (int(public), food_id))
+
+
+def save_public_food(conn: sqlite3.Connection, source: str, ref: str, name: str, base_amount: float, unit: str,
+                     nutrients: dict) -> bool:
+    """Add or refresh a food from a public database (INDB, USDA, Open Food Facts). True if it was new."""
+    values = [name, base_amount, unit] + [nutrients.get(n) for n in NUTRIENTS]
+    cols = ["name", "base_amount", "unit"] + list(NUTRIENTS)
+    cur = conn.execute(f"UPDATE foods SET {', '.join(c + ' = ?' for c in cols)} WHERE source = ? AND source_ref = ?",
+                       values + [source, ref])
+    if cur.rowcount:
+        return False
+    conn.execute(f"INSERT INTO foods ({', '.join(cols)}, source, source_ref, is_public) "
+                 f"VALUES ({', '.join('?' * len(cols))}, ?, ?, 1)", values + [source, ref])
+    return True
+
+
+def visible_foods_sql(alias: str = "f") -> str:
+    """Foods a person (bound as :uid) can see: the public list, foods they added, and their own list."""
+    return (f"({alias}.is_public = 1 OR {alias}.created_by = :uid OR "
+            f"EXISTS (SELECT 1 FROM user_foods mf WHERE mf.user_id = :uid AND mf.food_id = {alias}.id))")
+
+
 def update_food(conn: sqlite3.Connection, food_id: int, name: str, base_amount: float, unit: str, nutrients: dict) -> None:
     """Edit a food. Past log entries keep their amounts, so their totals follow the new nutrition."""
     with conn:
@@ -325,13 +363,15 @@ def delete_food(conn: sqlite3.Connection, food_id: int) -> bool:
     return True
 
 
-def add_foods_only(conn: sqlite3.Connection, entries: list[DiaryEntry], user_id: int | None = None) -> dict:
+def add_foods_only(conn: sqlite3.Connection, entries: list[DiaryEntry], user_id: int | None = None,
+                   public: bool = False) -> dict:
     """Add the foods from diary rows to the library without touching the daily log."""
     before = conn.execute("SELECT COUNT(*) FROM foods").fetchone()[0]
     freq = Counter((e.name, e.serving, tuple(e.nutrients().values())) for e in entries)
     with conn:
         for (name, serving, values), _n in freq.most_common():
-            upsert_food(conn, name, serving, dict(zip(NUTRIENTS, values)), source="upload", created_by=user_id)
+            upsert_food(conn, name, serving, dict(zip(NUTRIENTS, values)), source="upload", created_by=user_id,
+                        public=public)
     after = conn.execute("SELECT COUNT(*) FROM foods").fetchone()[0]
     return {"rows": len(entries), "new_foods": after - before, "total_foods": after}
 

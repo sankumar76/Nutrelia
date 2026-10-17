@@ -241,10 +241,12 @@ def test_my_foods_answer_first_then_the_public_list(conn):
     other = db.create_user(conn, "Other", "other", "pw1234")
     n = {"calories": 100, "carbs": 1, "fat": 1, "protein": 1}
     db.upsert_food(conn, "Egg white", "100 g", n, source="manual", created_by=other)
-    # nothing of mine matches: the public list, original foods before ones people added, and I choose
+    db.save_public_food(conn, "usda", "171287", "Egg white, raw", 100, "g", n)
+    # nothing of mine matches: the public list (original MFP foods before USDA), and I choose.
+    # Other people's foods are private, so theirs never shows up.
     m = matching.match_line(conn, "egg white", user_id=me)
     assert m.public and m.status == "choose"
-    assert [o["created_by"] for o in m.options] == [None, other]
+    assert [o["source"] for o in m.options] == ["mfp", "usda"]
     # once a food is mine it answers alone, and a single clear match is picked automatically
     db.upsert_food(conn, "Egg white", "1 cup", n, source="manual", created_by=me)
     m = matching.match_line(conn, "egg white", user_id=me)
@@ -295,3 +297,93 @@ def test_sharing_a_diary(tmp_path, monkeypatch):
     assert conn.execute("SELECT COUNT(*) FROM log_entries WHERE user_id=? AND day='2026-02-01'", (pid,)).fetchone()[0] > 0
     admin.post("/friends", data={})  # stop sharing
     assert priya.get(f"/friends/{sid}/day/2025-10-01").status_code == 404
+
+
+def _usda_zip(path):
+    import zipfile
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("FoodData_Central_sr_legacy_food_csv/nutrient.csv",
+                   'id,name,unit_name,nutrient_nbr,rank\n1003,Protein,G,203,600\n1004,Total lipid (fat),G,204,800\n'
+                   '1005,"Carbohydrate, by difference",G,205,1110\n1008,Energy,KCAL,208,300\n1079,"Fiber, total dietary",G,291,1200\n'
+                   '1093,"Sodium, Na",MG,307,5800\n2047,Energy (Atwater General Factors),KCAL,957,280\n')
+        z.writestr("FoodData_Central_sr_legacy_food_csv/food.csv",
+                   'fdc_id,data_type,description,food_category_id,publication_date\n'
+                   '168878,sr_legacy_food,"Rice, white, long-grain, regular, cooked",20,2019-04-01\n'
+                   '2346384,foundation_food,"Lentils, dry",16,2022-04-28\n'
+                   '999,sub_sample_food,"Lentils sample 1",16,2022-04-28\n')
+        z.writestr("FoodData_Central_sr_legacy_food_csv/food_nutrient.csv",
+                   'id,fdc_id,nutrient_id,amount\n1,168878,1008,130\n2,168878,1005,28.2\n3,168878,1003,2.69\n'
+                   '4,168878,1004,0.28\n5,168878,1093,1\n6,2346384,2047,357\n7,2346384,1003,23.6\n8,999,1008,1\n')
+
+
+def test_public_databases_load_and_reload(conn, tmp_path):
+    from nutrelia import sources
+    indb = tmp_path / "indb.csv"
+    indb.write_text("food_code,food_name,primarysource,energy_kj,energy_kcal,carb_g,protein_g,fat_g,freesugar_g,"
+                    "fibre_g,cholesterol_mg,sodium_mg,unit_serving_energy_kcal\n"
+                    "ASC001,Hot tea (Garam Chai),asc_manual,67.1,16.1,2.6,0.4,0.5,2.5,0,1.4,3.8,30\n"
+                    "ASC171,Masala dosa,asc_manual,700,167.3,24.1,3.9,6.2,0.6,2.1,0,250,400\n")
+    usda = tmp_path / "usda.zip"
+    _usda_zip(usda)
+    assert sources.save(conn, sources.load_indb(indb)) == {"added": 2, "updated": 0, "skipped": 0}
+    assert sources.save(conn, sources.load_usda(usda)) == {"added": 2, "updated": 0, "skipped": 0}
+    assert sources.save(conn, sources.load_indb(indb))["updated"] == 2  # loading again updates, no copies
+    dosa = conn.execute("SELECT * FROM foods WHERE source = 'indb' AND source_ref = 'ASC171'").fetchone()
+    assert (dosa["name"], dosa["calories"], dosa["fiber"], dosa["sodium"], dosa["base_amount"], dosa["unit"]) == \
+        ("Masala dosa", 167.3, 2.1, 250, 100, "g")
+    rice = conn.execute("SELECT * FROM foods WHERE source = 'usda' AND source_ref = '168878'").fetchone()
+    assert (rice["calories"], rice["carbs"], rice["is_public"]) == (130, 28.2, 1)
+    lentils = conn.execute("SELECT * FROM foods WHERE source = 'usda' AND source_ref = '2346384'").fetchone()
+    assert lentils["calories"] == 357  # Atwater energy when 208 is missing
+    m = matching.match_line(conn, "masala dosa 250 g")
+    assert m.options[0]["name"] == "Masala dosa" and round(m.options[0]["totals"]["calories"]) == 418
+
+
+def test_open_food_facts_product():
+    from nutrelia.sources import _off_food
+    f = _off_food({"code": "8904004400267", "product_name": "Aloo Bhujia", "brands": "Haldiram's",
+                   "nutriments": {"energy-kcal_100g": 583, "carbohydrates_100g": 41, "fat_100g": 41.6,
+                                  "proteins_100g": 11.2, "sodium_100g": 0.9}})
+    assert f.name == "Haldiram's - Aloo Bhujia" and f.nutrients["sodium"] == 900 and f.nutrients["calories"] == 583
+    assert _off_food({"code": "1", "product_name": ""}) is None
+
+
+def test_peoples_foods_are_private(conn):
+    me = db.create_user(conn, "Me", "me", "pw1234")
+    other = db.create_user(conn, "Other", "other", "pw1234")
+    n = {"calories": 210, "carbs": 30, "fat": 8, "protein": 4}
+    fid, _ = db.upsert_food(conn, "Grandma's laddu", "1 piece", n, source="manual", created_by=other)
+    assert not matching.match_line(conn, "grandma's laddu", user_id=me).options
+    assert matching.match_line(conn, "grandma's laddu", user_id=other).options[0]["id"] == fid
+    # the same food typed by someone else becomes their own copy, not a shared one
+    mine, _ = db.upsert_food(conn, "Grandma's laddu", "1 piece", n, source="manual", created_by=me)
+    assert mine != fid
+    db.set_public(conn, fid, True)  # the admin can put it on the public list
+    assert fid in [o["id"] for o in matching.match_line(conn, "grandma's laddu", user_id=db.create_user(
+        conn, "Third", "third", "pw1234")).options]
+
+
+def test_private_food_pages_and_admin_public_list(tmp_path, monkeypatch):
+    monkeypatch.setenv("NUTRELIA_DB", str(tmp_path / "app.db"))
+    monkeypatch.setenv("NUTRELIA_PASSWORD", "pw1234")
+    import importlib
+    import app as app_module
+    importlib.reload(app_module)
+    admin = app_module.app.test_client()
+    admin.post("/login", data={"username": "santhosh", "password": "pw1234"})
+    admin.post("/people", data={"action": "add", "name": "Priya", "username": "priya", "password": "pw5678"})
+    priya = app_module.app.test_client()
+    priya.post("/login", data={"username": "priya", "password": "pw5678"})
+    priya.post("/foods/new", data={"name": "Priya's poha", "serving": "1 bowl", "calories": "250", "public": "1"})
+    conn = app_module.db.connect()
+    food = conn.execute("SELECT * FROM foods WHERE name = ?", ("Priya's poha",)).fetchone()
+    assert food["is_public"] == 0  # only the admin can make foods public
+    assert admin.get(f"/foods/{food['id']}").status_code == 200  # the admin sees everything
+    admin.post("/people", data={"action": "add", "name": "Ravi", "username": "ravi", "password": "pw5678"})
+    ravi = app_module.app.test_client()
+    ravi.post("/login", data={"username": "ravi", "password": "pw5678"})
+    assert ravi.get(f"/foods/{food['id']}").status_code == 404
+    assert priya.get("/public-foods").status_code == 403
+    admin.post(f"/foods/{food['id']}", data={"public": "1"})
+    assert ravi.get(f"/foods/{food['id']}").status_code == 200
+    assert priya.post(f"/foods/{food['id']}", data={"name": "x", "serving": "1 bowl", "calories": "1"}).status_code == 403

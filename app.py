@@ -1,6 +1,7 @@
 """Nutrelia web app: build a day's food log by listing what you ate."""
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -13,7 +14,7 @@ from flask import Flask, abort, flash, g, redirect, render_template, request, se
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from nutrelia import db, matching  # noqa: E402
+from nutrelia import db, matching, sources  # noqa: E402
 from nutrelia.diary_parser import NUTRIENTS, parse_pdf  # noqa: E402
 from nutrelia.units import fmt_amount, parse_serving  # noqa: E402
 
@@ -25,6 +26,8 @@ app.config.update(MAX_CONTENT_LENGTH=40 * 1024 * 1024, SESSION_COOKIE_HTTPONLY=T
 ADMIN_USER = os.environ.get("NUTRELIA_ADMIN_USER", "santhosh")
 ADMIN_NAME = os.environ.get("NUTRELIA_ADMIN_NAME", "Santhosh")
 PASSWORD = os.environ.get("NUTRELIA_PASSWORD", "") or "nutrelia"
+FOOD_SOURCES = {"mfp": "Original", "indb": "INDB", "usda": "USDA", "off": "Open Food Facts"}
+FOODS_PAGE = 200
 UNITS = {"calories": "", "carbs": "g", "fat": "g", "protein": "g", "cholesterol": "mg", "sodium": "mg", "sugar": "g", "fiber": "g"}
 
 
@@ -81,7 +84,15 @@ def admin_required(view):
 
 
 def can_edit_food(food) -> bool:
-    return bool(g.user["is_admin"]) or (food["created_by"] is not None and food["created_by"] == g.user["id"])
+    """The admin looks after the public list; everyone else edits only their own private foods."""
+    if g.user["is_admin"]:
+        return True
+    return not food["is_public"] and food["created_by"] is not None and food["created_by"] == g.user["id"]
+
+
+def can_see_food(conn, food) -> bool:
+    return bool(g.user["is_admin"] or food["is_public"] or food["created_by"] == g.user["id"]
+                or food["id"] in db.my_food_ids(conn, g.user["id"]))
 
 
 def parse_day(value: str) -> str:
@@ -125,7 +136,8 @@ def qty(value):
 
 @app.context_processor
 def inject():
-    return {"NUTRIENTS": NUTRIENTS, "UNITS": UNITS, "MEALS": db.MEAL_ORDER, "user": g.get("user")}
+    return {"NUTRIENTS": NUTRIENTS, "UNITS": UNITS, "MEALS": db.MEAL_ORDER, "user": g.get("user"),
+            "FOOD_SOURCES": FOOD_SOURCES}
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -246,27 +258,36 @@ def update_entry(entry_id):
 def foods():
     q = request.args.get("q", "").strip()
     show = "all" if request.args.get("show") == "all" else "mine"
+    source = request.args.get("source", "")
     conn = get_db()
     uid = g.user["id"]
+    where = ["f.name LIKE :q"]
+    if show == "mine":
+        where.append("m.user_id IS NOT NULL")
+    else:
+        where.append("f.is_public = 1")
+        if source in FOOD_SOURCES:
+            where.append("f.source = :source")
+    sql = f"""FROM foods f LEFT JOIN users u ON u.id = f.created_by
+              LEFT JOIN user_foods m ON m.food_id = f.id AND m.user_id = :uid
+              WHERE {" AND ".join(where)}"""
+    args = {"uid": uid, "q": f"%{'%'.join(q.split())}%", "source": source}
+    total = conn.execute(f"SELECT COUNT(*) {sql}", args).fetchone()[0]
     rows = conn.execute(
-        f"""SELECT f.*, u.name AS creator_name, (m.user_id IS NOT NULL) AS in_mine
-            FROM foods f LEFT JOIN users u ON u.id = f.created_by
-            LEFT JOIN user_foods m ON m.food_id = f.id AND m.user_id = ?
-            WHERE f.name LIKE ? {"AND m.user_id IS NOT NULL" if show == "mine" else ""}
-            ORDER BY f.name COLLATE NOCASE, f.times_logged DESC""",
-        (uid, f"%{q}%"),
-    ).fetchall()
-    counts = conn.execute("SELECT COUNT(*), (SELECT COUNT(*) FROM user_foods WHERE user_id = ?) FROM foods",
-                          (uid,)).fetchone()
-    return render_template("foods.html", rows=rows, q=q, show=show, all_count=counts[0], mine_count=counts[1])
+        f"""SELECT f.*, u.name AS creator_name, (m.user_id IS NOT NULL) AS in_mine {sql}
+            ORDER BY f.name COLLATE NOCASE, f.times_logged DESC LIMIT {FOODS_PAGE}""", args).fetchall()
+    counts = conn.execute("SELECT (SELECT COUNT(*) FROM foods WHERE is_public = 1), "
+                          "(SELECT COUNT(*) FROM user_foods WHERE user_id = ?)", (uid,)).fetchone()
+    return render_template("foods.html", rows=rows, total=total, q=q, show=show, source=source,
+                           all_count=counts[0], mine_count=counts[1])
 
 
 @app.post("/foods/<int:food_id>/mine")
 @login_required
 def toggle_my_food(food_id):
     conn = get_db()
-    food = conn.execute("SELECT name FROM foods WHERE id = ?", (food_id,)).fetchone()
-    if not food:
+    food = conn.execute("SELECT * FROM foods WHERE id = ?", (food_id,)).fetchone()
+    if not food or not can_see_food(conn, food):
         abort(404)
     if request.form.get("action") == "remove":
         db.remove_from_my_foods(conn, g.user["id"], food_id)
@@ -311,11 +332,15 @@ def targets():
 def edit_food(food_id):
     conn = get_db()
     food = conn.execute("SELECT * FROM foods WHERE id = ?", (food_id,)).fetchone()
-    if not food:
+    if not food or not can_see_food(conn, food):
         abort(404)
     if request.method == "POST":
         if not can_edit_food(food):
             abort(403)
+        if "public" in request.form and g.user["is_admin"]:
+            db.set_public(conn, food_id, request.form["public"] == "1")
+            flash(f"{food['name']} is {'now on' if request.form['public'] == '1' else 'no longer on'} the public list.")
+            return redirect(url_for("edit_food", food_id=food_id))
         if "delete" in request.form:
             if db.delete_food(conn, food_id):
                 flash(f"Deleted {food['name']}.")
@@ -353,13 +378,54 @@ def import_foods():
                 except Exception:  # noqa: BLE001 - report any unreadable file to the user
                     flash(f"Couldn't read {f.filename}. Is it a MyFitnessPal Printable Diary PDF?")
         if entries:
-            stats = db.add_foods_only(get_db(), entries, g.user["id"])
+            public = bool(g.user["is_admin"] and request.form.get("public"))
+            stats = db.add_foods_only(get_db(), entries, g.user["id"], public=public)
             flash(f"Read {stats['rows']} food rows: {stats['new_foods']} new foods added "
                   f"({stats['total_foods']} foods in total).")
         elif files:
             flash("No foods found in that file.")
         return redirect(url_for("foods"))
     return render_template("import.html")
+
+
+@app.route("/public-foods", methods=["GET", "POST"])
+@admin_required
+def public_foods():
+    """The admin's page for filling the public list from INDB, USDA and Open Food Facts."""
+    conn = get_db()
+    results, query = [], request.values.get("off_q", "").strip()
+    if request.method == "POST":
+        action = request.form.get("action")
+        upload = request.files.get("file")
+        if action in ("indb", "usda"):
+            if not upload or not upload.filename:
+                flash("Choose a file first.")
+                return redirect(url_for("public_foods"))
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / Path(upload.filename).name
+                upload.save(path)
+                try:
+                    stats = sources.save(conn, sources.load_indb(path) if action == "indb" else sources.load_usda(path))
+                except Exception as e:  # noqa: BLE001 - tell the admin what went wrong with their file
+                    flash(f"Couldn't read {upload.filename}: {e}")
+                    return redirect(url_for("public_foods"))
+            flash(f"{FOOD_SOURCES[action]}: {stats['added']} foods added, {stats['updated']} updated"
+                  f"{', ' + str(stats['skipped']) + ' skipped without calories' if stats['skipped'] else ''}.")
+            return redirect(url_for("public_foods"))
+        if action == "off_add":
+            picked = [sources.PublicFood(**json.loads(v)) for v in request.form.getlist("product")]
+            stats = sources.save(conn, picked)
+            flash(f"Open Food Facts: {stats['added']} added, {stats['updated']} updated.")
+            return redirect(url_for("public_foods", off_q=query))
+    if query:
+        try:
+            results = sources.search_off(query, "india" if request.values.get("india") else None)
+        except Exception as e:  # noqa: BLE001 - network problems are shown, not raised
+            flash(f"Couldn't reach Open Food Facts ({e}).")
+    counts = dict(conn.execute("SELECT source, COUNT(*) FROM foods WHERE is_public = 1 GROUP BY source").fetchall())
+    return render_template("public_foods.html", counts=counts, results=results, query=query,
+                           india=bool(request.values.get("india", "1" if not query else "")),
+                           as_json=lambda f: json.dumps(f.__dict__))
 
 
 @app.route("/friends", methods=["GET", "POST"])
@@ -478,7 +544,9 @@ def new_food():
         conn = get_db()
         serving = request.form.get("serving", "").strip() or "1 serving"
         with conn:
-            fid, base = db.upsert_food(conn, name, serving, nutrients, source="manual", created_by=g.user["id"])
+            public = bool(g.user["is_admin"] and request.form.get("public"))
+            fid, base = db.upsert_food(conn, name, serving, nutrients, source="manual", created_by=g.user["id"],
+                                       public=public)
         day, meal = request.form.get("day"), request.form.get("meal")
         if day and meal:
             food = conn.execute("SELECT * FROM foods WHERE id = ?", (fid,)).fetchone()

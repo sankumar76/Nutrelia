@@ -22,13 +22,35 @@ everyone shares the food library. Foods can be changed by the person who added t
 the admin.
 
 Everyone has a **My foods** list. It starts with every food you have logged or added, and
-any food you log, add by hand or upload joins it. Each line you type is matched against your
-own list first. Only when nothing there matches does Nutrelia show the **public list** (every
-food in Nutrelia: the original MFP foods first, then foods people added), and the food you
-pick joins your list. On the Foods page you can switch between My foods and the public list,
-and add or remove foods with one tap. When a food has more than one version (for example
-*Sambar, 250 g* and *Sambar, 1 cup*), Nutrelia asks which one you mean. Foods it has never
-seen can be added by hand.
+any food you log or add joins it. Each line you type is matched against your own list first.
+Only when nothing there matches does Nutrelia show the **public list**, and the food you pick
+joins your list. In the public list, the original MFP foods come first, then the Indian
+Nutrient Databank, USDA and Open Food Facts. When a food has more than one version, Nutrelia
+asks which one you mean. Foods it has never seen can be added by hand.
+
+Foods people add are **private**: only they see them. The admin looks after the public list:
+they can add foods to it, edit them, and move any food on or off it from the food's page.
+
+## Fill the public list
+
+The admin's **Foods → Manage public list** page loads:
+
+- **INDB** (Indian Nutrient Databank): download the Excel file from
+  [anuvaad.org.in](https://www.anuvaad.org.in/indian-nutrient-databank/) and upload it.
+- **USDA FoodData Central**: download *SR Legacy* and/or *Foundation Foods* as CSV from
+  [fdc.nal.usda.gov](https://fdc.nal.usda.gov/download-datasets) and upload each .zip.
+- **Open Food Facts**: search by name and tick the products to add.
+
+Or from a Bash console (loading a source again updates it, never duplicates):
+
+```bash
+python scripts/load_public_foods.py --indb Anuvaad_INDB_2024.11.xlsx
+python scripts/load_public_foods.py --usda FoodData_Central_sr_legacy_food_csv_2018-04.zip
+python scripts/load_public_foods.py --off-country india   # every product Open Food Facts lists for India
+```
+
+Values from these databases are per 100 g, so type amounts in grams (`dosa 150 g`).
+Open Food Facts data is © Open Food Facts contributors under the ODbL; USDA data is public domain.
 
 On **Friends** you choose who can see your diary. People you share with see what you
 ate each day (not your targets) and can copy a whole meal into their own day. Sharing
