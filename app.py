@@ -134,6 +134,12 @@ def qty(value):
     return fmt_amount(value) if value is not None else ""
 
 
+@app.template_filter("cap")
+def cap_filter(text) -> str:
+    """Show a word with a capital first letter; usernames sign in either way."""
+    return db.cap_first(str(text or ""))
+
+
 @app.context_processor
 def inject():
     return {"NUTRIENTS": NUTRIENTS, "UNITS": UNITS, "MEALS": db.MEAL_ORDER, "user": g.get("user"),

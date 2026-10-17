@@ -29,7 +29,7 @@
       <div class="item">
         <span class="avatar">{{ u.name[:1]|upper }}</span>
         <div class="grow"><b>{{ u.name }}</b>
-          <small>{{ u.username }}{% if u.is_admin %} · admin{% endif %} · {{ u.days_logged }} day{{ '' if u.days_logged == 1 else 's' }} logged{% if u.last_day %}, last {{ u.last_day }}{% endif %}</small></div>
+          <small>{{ u.username|cap }}{% if u.is_admin %} · Admin{% endif %} · {{ u.days_logged }} day{{ '' if u.days_logged == 1 else 's' }} logged{% if u.last_day %}, last {{ u.last_day }}{% endif %}</small></div>
       </div>
       {% if u.id != user.id %}
       <details class="person-tools">

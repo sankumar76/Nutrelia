@@ -25,7 +25,7 @@
   {% for o in others %}
     <label class="toggle-row">
       <span class="avatar">{{ o.name[:1]|upper }}</span>
-      <span class="grow">{{ o.name }} <small class="muted">{{ o.username }}</small></span>
+      <span class="grow">{{ o.name }} <small class="muted">{{ o.username|cap }}</small></span>
       <input class="switch" type="checkbox" name="viewer" value="{{ o.id }}" {% if o.id in sharing %}checked{% endif %}>
     </label>
   {% else %}

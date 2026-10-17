@@ -6,7 +6,7 @@
   <section class="card">
     <div class="list"><div class="item">
       <span class="avatar">{{ user.name[:1]|upper }}</span>
-      <div class="grow"><b>{{ user.name }}</b><small>Signed in as {{ user.username }}{% if user.is_admin %} · admin{% endif %}</small></div>
+      <div class="grow"><b>{{ user.name }}</b><small>Signed in as {{ user.username|cap }}{% if user.is_admin %} · Admin{% endif %}</small></div>
       <a class="btn outline" href="{{ url_for('logout') }}">Log out</a>
     </div></div>
     {% if age or bmi %}
