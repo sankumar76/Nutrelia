@@ -112,16 +112,17 @@ def _rows_from_table(path: Path) -> Iterator[dict]:
     if path.suffix.lower() in (".xlsx", ".xlsm"):
         from openpyxl import load_workbook
         wb = load_workbook(path, read_only=True, data_only=True)
-        ws = wb.worksheets[0]
-        rows = ws.iter_rows(values_only=True)
-        header = None
-        for row in rows:
-            cells = [str(c).strip().lower() if c is not None else "" for c in row]
-            if header is None:
-                if any("name" in c for c in cells):
-                    header = cells
-                continue
-            yield dict(zip(header, row))
+        try:  # read-only workbooks keep the file open until closed
+            header = None
+            for row in wb.worksheets[0].iter_rows(values_only=True):
+                cells = [str(c).strip().lower() if c is not None else "" for c in row]
+                if header is None:
+                    if any("name" in c for c in cells):
+                        header = cells
+                    continue
+                yield dict(zip(header, row))
+        finally:
+            wb.close()
     else:
         with path.open(newline="", encoding="utf-8-sig") as fh:
             for row in csv.DictReader(fh):

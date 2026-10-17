@@ -370,7 +370,7 @@ def import_foods():
             flash("Choose at least one PDF.")
             return redirect(url_for("import_foods"))
         entries = []
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             for i, f in enumerate(files):
                 path = Path(tmp) / f"diary{i}.pdf"
                 f.save(path)
@@ -402,7 +402,8 @@ def public_foods():
             if not upload or not upload.filename:
                 flash("Choose a file first.")
                 return redirect(url_for("public_foods"))
-            with tempfile.TemporaryDirectory() as tmp:
+            # ignore_cleanup_errors: PythonAnywhere's /tmp can refuse to remove a folder right after use
+            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
                 path = Path(tmp) / Path(upload.filename).name
                 upload.save(path)
                 try:
